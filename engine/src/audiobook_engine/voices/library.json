@@ -1,0 +1,225 @@
+{
+ "version": 1,
+ "voices": [
+  {
+   "id": "fr_siwis_female_book",
+   "name": "SIWIS — studio narrator (F)",
+   "lang": "fr",
+   "gender": "female",
+   "description": "Professional French voice talent, neutral book reading, studio quality.",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The dataset README.txt says the data is 'usable for any purpose, under the Creative Commons Attribution 4.0 International (CC BY 4.0) licence'. The Overview.pdf also says 'no restrictions on the usage', CC BY 4.0. The HF mirror card says license: cc-by-4.0.",
+   "commercial_ok": true,
+   "attribution": "Voice sample from The SIWIS French Speech Synthesis Database: Yamagishi, Honnet, Garner, Lazaridis (2017), University of Edinburgh, CSTR, https://doi.org/10.7488/ds/1705. Licensed CC BY 4.0.",
+   "source_page": "https://datashare.ed.ac.uk/handle/10283/2353",
+   "audio_url": "https://huggingface.co/datasets/Aviv-anthonnyolime/SIWIS_French_Speech_Synthesis_Database/resolve/main/wavs/part2/neut_book_s03_0138.wav",
+   "transcript": "Mais le Nautilus, forçant son hélice, les emportait, les entraînait, ou les ramenait vers le niveau supérieur des eaux, sans se soucier ni de leur poids énorme, ni de leurs puissantes étreintes.",
+   "duration_s": 11.58,
+   "sample_rate": 44100,
+   "verified": {
+    "license_evidence": "The text of the DataShare page (handle 10283/2353) does not name the licence. Its 'Licences' section links an 'End-user Licence' that is the 'Creative Commons Attribution 4.0 International Public License'. README.txt, attached to the same page, says: 'The data is usable for any purpose, under the Creative Commons Attribution 4.0 International (CC BY 4.0) licence.' The HF mirror card (Aviv-anthonnyolime) also has the tag cc-by-4.0.",
+    "listened": false
+   }
+  },
+  {
+   "id": "fr_kyutai_estelle_female",
+   "name": "Estelle (F)",
+   "lang": "fr",
+   "gender": "female",
+   "description": "Conversational French female voice (Kyutai). Real, identifiable person: personal use.",
+   "license": "CC0",
+   "license_detail": "CC0. The repo README, section unmute-prod-website, names the three exceptions (degaulle-2, ex04 Expresso, p329_022 VCTK) and then says 'The others are our own recordings and you may use them as CC0.'",
+   "commercial_ok": true,
+   "attribution": "None required (CC0). Courtesy: 'Développeuse' / estelle voice from kyutai/tts-voices (Kyutai).",
+   "source_page": "https://huggingface.co/kyutai/tts-voices",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/unmute-prod-website/developpeuse-3.wav",
+   "transcript": "",
+   "duration_s": 13.357,
+   "sample_rate": 48000,
+   "verified": {
+    "license_evidence": "The kyutai/tts-voices README (unmute-prod-website section) lists three exceptions (degaulle-2, ex04_narration_longform_00001, p329_022) and then says: 'The others are our own recordings and you may use them as CC0.' developpeuse-3.wav is not an exception. The model card has no YAML licence tag (HF shows a missing-metadata warning).",
+    "listened": false
+   }
+  },
+  {
+   "id": "fr_cmltts_12205_female",
+   "name": "LibriVox reader 12205 (F)",
+   "lang": "fr",
+   "gender": "female",
+   "description": "French audiobook narrator reading Stendhal (LibriVox, enhanced).",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The Kyutai README says: 'French voices selected from the CML-TTS Dataset, licensed under the Creative Commons License: Attribution 4.0 International.' OpenSLR 146 lists CML-TTS as CC-BY 4.0.",
+   "commercial_ok": true,
+   "attribution": "Voice sample from the CML-TTS dataset (https://www.openslr.org/146/), CC BY 4.0, derived from Multilingual LibriSpeech and LibriVox public-domain recordings (speaker 12205). Enhanced version by Kyutai (https://huggingface.co/kyutai/tts-voices).",
+   "source_page": "https://huggingface.co/kyutai/tts-voices",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/cml-tts/fr/12205_11650_000004-0002_enhanced.wav",
+   "transcript": "Julien jouit délicieusement de l'esprit et de la bravoure dont il fit preuve de nouveau pendant cette discussion.",
+   "duration_s": 6.68,
+   "sample_rate": 32000,
+   "verified": {
+    "license_evidence": "kyutai/tts-voices README, cml-tts/fr section: 'French voices selected from the CML-TTS Dataset, licensed under the Creative Commons License: Attribution 4.0 International.'",
+    "listened": false
+   }
+  },
+  {
+   "id": "fr_cmltts_7142_male",
+   "name": "LibriVox reader 7142 (M)",
+   "lang": "fr",
+   "gender": "male",
+   "description": "French audiobook narrator reading Jules Verne (LibriVox, enhanced).",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The Kyutai README states the cml-tts/fr voices are licensed under the Creative Commons License: Attribution 4.0 International. OpenSLR 146 lists CC-BY 4.0.",
+   "commercial_ok": true,
+   "attribution": "Voice sample from the CML-TTS dataset (https://www.openslr.org/146/), CC BY 4.0, derived from Multilingual LibriSpeech and LibriVox public-domain recordings (speaker 7142). Enhanced version by Kyutai (https://huggingface.co/kyutai/tts-voices).",
+   "source_page": "https://huggingface.co/kyutai/tts-voices",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/cml-tts/fr/7142_2432_000124-0003_enhanced.wav",
+   "transcript": "Mais avant de déborder je fais quelques observations pour calculer la distance parcourue, et je les note sur mon journal",
+   "duration_s": 7.04,
+   "sample_rate": 32000,
+   "verified": {
+    "license_evidence": "kyutai/tts-voices README, cml-tts/fr section: 'French voices selected from the CML-TTS Dataset, licensed under the Creative Commons License: Attribution 4.0 International.'",
+    "listened": false
+   }
+  },
+  {
+   "id": "fr_kyutai_fabieng_male",
+   "name": "Fabieng (M)",
+   "lang": "fr",
+   "gender": "male",
+   "description": "Character-style French male voice (Kyutai). Real, identifiable person: personal use.",
+   "license": "CC0",
+   "license_detail": "CC0. Per the repo README for unmute-prod-website: 'The others are our own recordings and you may use them as CC0.' fabieng-enhanced-v2.wav is not one of the three listed exceptions.",
+   "commercial_ok": true,
+   "attribution": "None required (CC0). Courtesy: 'Fabieng' voice from kyutai/tts-voices (Kyutai).",
+   "source_page": "https://huggingface.co/kyutai/tts-voices",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/unmute-prod-website/fabieng-enhanced-v2.wav",
+   "transcript": "",
+   "duration_s": 11.517,
+   "sample_rate": 48000,
+   "verified": {
+    "license_evidence": "kyutai/tts-voices README, unmute-prod-website: 'The others are our own recordings and you may use them as CC0.' The listed exceptions are degaulle-2.wav, ex04_narration_longform_00001.wav and p329_022.wav; fabieng-enhanced-v2.wav is not among them.",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_ljspeech_lj006_0002_female_us",
+   "name": "Linda Johnson — LJSpeech (F, US)",
+   "lang": "en",
+   "gender": "female",
+   "description": "Calm, even American narrator (LibriVox). Public domain.",
+   "license": "Public domain",
+   "license_detail": "Public domain. keithito.com says the dataset 'is in the public domain in the US (and most likely other countries as well)' and 'There are no restrictions on its use.' The mirror README repeats 'This is a public domain speech dataset'.",
+   "commercial_ok": true,
+   "attribution": "None required. Optional credit as the source requests: 'Recordings by Linda Johnson from LibriVox. Alignment and annotation by Keith Ito.' (https://keithito.com/LJ-Speech-Dataset/)",
+   "source_page": "https://keithito.com/LJ-Speech-Dataset/",
+   "audio_url": "https://huggingface.co/datasets/flexthink/ljspeech/resolve/main/wavs/LJ006-0002.wav",
+   "transcript": "In the preceding chapter I have been tempted by the importance of the general question to give it prominence and precedence over the particular branch of which I am treating.",
+   "duration_s": 9.98,
+   "sample_rate": 22050,
+   "verified": {
+    "license_evidence": "keithito.com/LJ-Speech-Dataset: 'This dataset is in the public domain in the US (and most likely other countries as well).' and 'There are no restrictions on its use.' Also: 'you may use it without attribution.'",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_librittsr_bill_boerst_male_us",
+   "name": "Bill Boerst (M, US)",
+   "lang": "en",
+   "gender": "male",
+   "description": "American LibriVox fiction narrator (LibriTTS-R restored).",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The dataset card says 'license: cc-by-4.0', derived from LibriTTS-R. OpenSLR 141 says 'License: CC BY 4.0'.",
+   "commercial_ok": true,
+   "attribution": "S4788: LibriTTS-R train-clean-100 speaker 4788 (Bill Boerst), CC BY 4.0 (LibriTTS-R, https://www.openslr.org/141/). Clip cut by zloezlo/fine-read-it-voices. LibriTTS-R: Koizumi et al., 'LibriTTS-R: A Restored Multi-Speaker Text-to-Speech Corpus', 2023.",
+   "source_page": "https://huggingface.co/datasets/zloezlo/fine-read-it-voices",
+   "audio_url": "https://huggingface.co/datasets/zloezlo/fine-read-it-voices/resolve/main/S4788.wav",
+   "transcript": "Dora, seeing her friend's pale face, was sorry that she had wondered aloud. Then to change the subject, she started another. \"Jerry didn't have time to tell us about the Evil Eye Turquoise, did he?\"",
+   "duration_s": 10.8,
+   "sample_rate": 24000,
+   "verified": {
+    "license_evidence": "zloezlo/fine-read-it-voices card: the metadata tag is cc-by-4.0, and the body says 'This dataset is released under the same license, CC BY 4.0', derived from LibriTTS-R (CC BY 4.0).",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_librittsr_laura_caldwell_female_us",
+   "name": "Laura Caldwell (F, US)",
+   "lang": "en",
+   "gender": "female",
+   "description": "Low-pitched American LibriVox narrator, steady non-fiction style.",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The dataset card says 'license: cc-by-4.0', derived from LibriTTS-R. OpenSLR 141 says 'License: CC BY 4.0'.",
+   "commercial_ok": true,
+   "attribution": "F016: LibriTTS-R train-clean-100 speaker 1841 (Laura Caldwell), CC BY 4.0 (LibriTTS-R, https://www.openslr.org/141/). Clip cut by zloezlo/fine-read-it-voices. LibriTTS-R: Koizumi et al., 2023.",
+   "source_page": "https://huggingface.co/datasets/zloezlo/fine-read-it-voices",
+   "audio_url": "https://huggingface.co/datasets/zloezlo/fine-read-it-voices/resolve/main/F016.wav",
+   "transcript": "We do not know how long the Indians have occupied our country, but it has probably been several thousand years. Some of the main groups have undoubtedly been here longer than others.",
+   "duration_s": 10.98,
+   "sample_rate": 24000,
+   "verified": {
+    "license_evidence": "zloezlo/fine-read-it-voices card: the metadata tag is cc-by-4.0, and the body says 'This dataset is released under the same license, CC BY 4.0'. F016 is listed in the card's sample table.",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_vctk_p225_female_uk",
+   "name": "VCTK p225 (F, UK)",
+   "lang": "en",
+   "gender": "female",
+   "description": "Southern English female, studio read speech.",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The DataShare license_text.txt reads 'Creative Commons License: Attribution 4.0 International'. The kyutai/tts-voices README says 'licensed under the Creative Commons License: Attribution 4.0 International'.",
+   "commercial_ok": true,
+   "attribution": "Yamagishi, Junichi; Veaux, Christophe; MacDonald, Kirsten. (2019). CSTR VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit (version 0.92). University of Edinburgh, CSTR. https://doi.org/10.7488/ds/2645. CC BY 4.0. Clip via kyutai/tts-voices.",
+   "source_page": "https://datashare.ed.ac.uk/handle/10283/3443",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p225_023.wav",
+   "transcript": "If the red of the second bow falls upon the green of the first, the result is to give a bow with an abnormally wide yellow band, since red and green light when mixed form yellow.",
+   "duration_s": 12.155,
+   "sample_rate": 48000,
+   "verified": {
+    "license_evidence": "The text of the DataShare page (handle 10283/3443) does not name the licence. license_text.txt, attached to that page, opens with 'Creative Commons License: Attribution 4.0 International'. The kyutai/tts-voices README, vctk section, also says the clips are licensed under CC BY 4.0.",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_vctk_p226_male_uk",
+   "name": "VCTK p226 (M, UK)",
+   "lang": "en",
+   "gender": "male",
+   "description": "Surrey English male, studio read speech.",
+   "license": "CC BY 4",
+   "license_detail": "CC BY 4.0. The DataShare license_text.txt reads 'Creative Commons License: Attribution 4.0 International'. The kyutai/tts-voices README says the same.",
+   "commercial_ok": true,
+   "attribution": "Yamagishi, Junichi; Veaux, Christophe; MacDonald, Kirsten. (2019). CSTR VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit (version 0.92). University of Edinburgh, CSTR. https://doi.org/10.7488/ds/2645. CC BY 4.0. Clip via kyutai/tts-voices.",
+   "source_page": "https://datashare.ed.ac.uk/handle/10283/3443",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/vctk/p226_023.wav",
+   "transcript": "If the red of the second bow falls upon the green of the first, the result is to give a bow with an abnormally wide yellow band, since red and green light when mixed form yellow.",
+   "duration_s": 12.153,
+   "sample_rate": 48000,
+   "verified": {
+    "license_evidence": "license_text.txt, attached to the DataShare page 10283/3443: 'Creative Commons License: Attribution 4.0 International'. The kyutai/tts-voices README, vctk section, also says CC BY 4.0. The page text itself shows only a 'Licences' heading.",
+    "listened": false
+   }
+  },
+  {
+   "id": "en_voicezero_stuart_bell_male_uk",
+   "name": "Stuart Bell (M, UK)",
+   "lang": "en",
+   "gender": "male",
+   "description": "Neutral Southern English LibriVox reader. Recorded quietly; normalised on install.",
+   "license": "CC0 1",
+   "license_detail": "CC0 1.0. The Voice-Zero README says 'all files in this repository are under the CC0 license' and that the voices directory 'will always hold CC0-licensed samples'. The kyutai/tts-voices README says voice-zero is 'Released under the CC0 licence'.",
+   "commercial_ok": true,
+   "attribution": "None required (CC0). Courtesy credit: Stuart Bell (https://librivox.org/reader/1870), LibriVox; sample from Voice-Zero by OwenTyme.",
+   "source_page": "https://github.com/OwenTyme/voice-zero",
+   "audio_url": "https://huggingface.co/kyutai/tts-voices/resolve/main/voice-zero/stuart_bell.wav",
+   "transcript": "",
+   "duration_s": 8.454,
+   "sample_rate": 44100,
+   "verified": {
+    "license_evidence": "Voice-Zero GitHub README: 'Unless otherwise noted, all files in this repository are under the CC0 license.' The voices notes say 'This directory will always hold CC0-licensed samples.' The voices table lists stuart_bell.flac with the accent 'English, Neutral, Southern' (labels described as 'often based on guesswork'). The kyutai README voice-zero section says 'Released under the CC0 licence.'",
+    "listened": false
+   }
+  }
+ ]
+}

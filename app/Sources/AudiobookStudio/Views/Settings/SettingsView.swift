@@ -1,0 +1,434 @@
+import AppKit
+import SwiftUI
+
+/// Settings scene (⌘,): engine location (with Test), where audiobooks go, audio quality, notifications,
+/// default narrator per language, pacing (stored only in v1), cache size with "Free Space", and the
+/// keep-work option. Every change is saved at once (AppSettings writes UserDefaults on every change).
+struct SettingsView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        TabView {
+            GeneralSettingsTab()
+                .tabItem { Label("General", systemImage: "gearshape") }
+            VoiceSettingsTab()
+                .tabItem { Label("Voices", systemImage: "person.wave.2") }
+            StorageSettingsTab()
+                .tabItem { Label("Storage", systemImage: "internaldrive") }
+        }
+        .frame(width: 600, height: 540)
+    }
+}
+
+// MARK: - General
+
+private struct GeneralSettingsTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        Form {
+            EngineLocationSection()
+
+            Section {
+                LabeledContent("Save audiobooks") {
+                    Text(settings.outputFolderURL.map { $0.path(percentEncoded: false) } ?? "Next to the book")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .help(settings.outputFolder ?? "In the same folder as the EPUB or PDF")
+                }
+                .accessibilityElement(children: .combine)
+                HStack {
+                    Button("Choose Folder…") { chooseOutputFolder() }
+                        .accessibilityLabel("Choose the folder for finished audiobooks")
+                    Button("Next to the Book") { settings.outputFolder = nil }
+                        .disabled(settings.outputFolderURL == nil)
+                        .accessibilityLabel("Save audiobooks next to their book")
+                    Spacer()
+                }
+                Picker("Audio quality", selection: $settings.bitrateKbps) {
+                    ForEach(AppSettings.bitrateChoices, id: \.self) { kbps in
+                        Text(OpsAudioQuality.title(kbps: kbps)).tag(kbps)
+                    }
+                }
+                .accessibilityLabel("Audio quality")
+            } header: {
+                Text("Audiobooks")
+            } footer: {
+                Text("\(OpsAudioQuality.caption(kbps: settings.bitrateKbps)) 64 kbps is plenty for a single narrator.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Notify me when a conversion finishes or fails", isOn: $settings.notificationsEnabled)
+                    .accessibilityLabel("Notify me when a conversion finishes or fails")
+                    .onChange(of: settings.notificationsEnabled) { _, on in
+                        if on { Notifications.requestAuthorization() }
+                    }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                if !Notifications.isAvailable {
+                    Text("Notifications appear only when Audiobook Studio runs as an installed app, not from a development build.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func chooseOutputFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose where finished audiobooks are saved."
+        panel.prompt = "Choose"
+        if let current = model.settings.outputFolderURL { panel.directoryURL = current }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.settings.outputFolderURL = url
+    }
+}
+
+/// Engine location: edit, Choose…, Test (runs `engines`), Use Default. A path that passes the test is
+/// saved and everything is reloaded; a failing one can still be kept with "Use Anyway".
+private struct EngineLocationSection: View {
+    @Environment(AppModel.self) private var model
+    @State private var pathDraft = ""
+    @State private var isTesting = false
+    @State private var testedPath: String?
+    @State private var success: String?
+    @State private var failure: EngineError?
+
+    var body: some View {
+        Section {
+            TextField("Location", text: $pathDraft, prompt: Text(EngineClient.defaultPath))
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { test() }
+                .accessibilityLabel("Engine location")
+                .help("The audiobook-engine program")
+            HStack(spacing: 8) {
+                Button("Choose…") { chooseEngine() }
+                    .accessibilityLabel("Choose the engine program")
+                Button("Test") { test() }
+                    .disabled(isTesting || trimmedDraft.isEmpty)
+                    .accessibilityLabel("Test the engine at this location")
+                    .help("Runs the engine once to list its voice engines")
+                Button("Use Default") {
+                    pathDraft = EngineClient.defaultPath
+                    test()
+                }
+                .disabled(isTesting || (model.settings.enginePathOverride == nil && trimmedDraft == EngineClient.defaultPath))
+                .accessibilityLabel("Use the default engine location")
+                if isTesting {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Testing the engine")
+                }
+                Spacer()
+            }
+            if let success {
+                Label(success, systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let failure {
+                OpsErrorBox(error: failure) { self.failure = nil }
+                if let testedPath, testedPath != model.settings.enginePath {
+                    Button("Use This Location Anyway") {
+                        model.settings.enginePath = testedPath
+                        self.failure = nil
+                        Task { await model.refreshAll() }
+                    }
+                    .accessibilityLabel("Save this engine location even though the test failed")
+                }
+            }
+        } header: {
+            Text("Engine")
+        } footer: {
+            Text(footer)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { pathDraft = model.settings.enginePath }
+    }
+
+    private var trimmedDraft: String { pathDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var footer: String {
+        if model.settings.enginePathOverride == nil {
+            return "Using the default location. A location that passes the test is saved and used right away."
+        }
+        return "Using a custom location. Default: \(EngineClient.defaultPath)"
+    }
+
+    private func test() {
+        let path = trimmedDraft
+        guard !path.isEmpty, !isTesting else { return }
+        isTesting = true
+        testedPath = path
+        success = nil
+        failure = nil
+        Task {
+            do {
+                let list = try await model.testEngine(path: path)
+                success = OpsEngineCheck.summary(list)
+                isTesting = false
+                if path != model.settings.enginePath || model.errors[.engines] != nil {
+                    model.settings.enginePath = path
+                    await model.refreshAll()
+                }
+            } catch {
+                failure = EngineError(error)
+                isTesting = false
+            }
+        }
+    }
+
+    private func chooseEngine() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true   // virtual environments live in hidden ".venv" folders
+        panel.treatsFilePackagesAsDirectories = true
+        panel.message = "Choose the audiobook-engine program (for example inside the engine’s .venv/bin folder)."
+        panel.prompt = "Choose"
+        let current = URL(fileURLWithPath: trimmedDraft.isEmpty ? model.settings.enginePath : trimmedDraft)
+        panel.directoryURL = current.deletingLastPathComponent()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pathDraft = url.path
+        test()
+    }
+}
+
+// MARK: - Voices
+
+private struct VoiceSettingsTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        Form {
+            Section {
+                ForEach(model.opsLanguages, id: \.self) { language in
+                    DefaultVoicePicker(language: language)
+                }
+                if model.engines.isEmpty {
+                    Text("Voices appear once the engine is reachable.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Default narrator")
+            } footer: {
+                Text("Used when you open a book in that language. “Automatic” picks an installed engine that allows commercial use first.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Between sentences", selection: $settings.pacing.sentence) { pauseOptions }
+                    .accessibilityLabel("Pause between sentences")
+                Picker("Between paragraphs", selection: $settings.pacing.paragraph) { pauseOptions }
+                    .accessibilityLabel("Pause between paragraphs")
+                Picker("Between chapters", selection: $settings.pacing.chapter) { pauseOptions }
+                    .accessibilityLabel("Pause between chapters")
+            } header: {
+                Text("Pacing")
+            } footer: {
+                Text("Saved for a future version: the engine does not use these pauses yet.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var pauseOptions: some View {
+        ForEach(PauseLength.allCases) { length in
+            Text(length.title).tag(length)
+        }
+    }
+}
+
+/// "Automatic" or one engine voice for a language; keeps the saved speed and speech check when the same
+/// voice is chosen again.
+private struct DefaultVoicePicker: View {
+    @Environment(AppModel.self) private var model
+    let language: String
+
+    var body: some View {
+        let choices = model.opsNarratorChoices(language: language)
+        let saved = model.settings.defaultVoices[language]
+        let savedKey = saved.map(OpsNarratorChoice.key)
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(Formatters.languageName(language), selection: binding(choices: choices)) {
+                Text(automaticTitle).tag("")
+                if !choices.isEmpty { Divider() }
+                ForEach(choices) { choice in
+                    Text(choice.pickerTitle).tag(choice.id)
+                }
+                if let saved, let savedKey, !choices.contains(where: { $0.id == savedKey }) {
+                    Text("\(saved.displayName(engines: model.engines, voices: model.voices)) (not available)")
+                        .tag(savedKey)
+                }
+            }
+            .accessibilityLabel("Default narrator for \(Formatters.languageName(language)) books")
+            if let saved {
+                Text(details(saved))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var automaticTitle: String {
+        guard let suggestion = VoiceSelection.suggested(for: language, engines: model.engines, voices: model.voices,
+                                                       models: model.models) else { return "Automatic" }
+        return "Automatic (\(suggestion.displayName(engines: model.engines, voices: model.voices)))"
+    }
+
+    private func details(_ v: VoiceSelection) -> String {
+        let speed = abs(v.speed - 1) < 0.001 ? "normal speed" : "speed \(Formatters.multiplier(v.speed))"
+        return "\(speed) · speech check \(v.verify ? "on" : "off")"
+    }
+
+    private func binding(choices: [OpsNarratorChoice]) -> Binding<String> {
+        Binding(
+            get: { model.settings.defaultVoices[language].map(OpsNarratorChoice.key) ?? "" },
+            set: { id in
+                guard !id.isEmpty, let choice = choices.first(where: { $0.id == id }) else {
+                    if id.isEmpty { model.settings.defaultVoices[language] = nil }
+                    return
+                }
+                if let current = model.settings.defaultVoices[language], OpsNarratorChoice.key(current) == id { return }
+                model.settings.defaultVoices[language] = choice.selection
+            })
+    }
+}
+
+// MARK: - Storage
+
+private struct StorageSettingsTab: View {
+    @Environment(AppModel.self) private var model
+    @State private var confirmFree = false
+    @State private var freedMessage: String?
+    @State private var error: EngineError?
+
+    var body: some View {
+        @Bindable var settings = model.settings
+        Form {
+            Section {
+                cacheFigures
+                HStack(spacing: 8) {
+                    Button("Free Space…") {
+                        freedMessage = nil
+                        error = nil
+                        confirmFree = true
+                    }
+                    .disabled(model.isClearingCache || model.activeJobCount > 0 || model.cacheInfo == nil)
+                    .accessibilityLabel("Free disk space used by cached audio")
+                    .help(model.activeJobCount > 0 ? "A conversion is running; free space after it finishes."
+                                                   : "Deletes cached audio; finished audiobooks are kept")
+                    Button("Refresh") {
+                        Task { await model.refreshCache() }
+                    }
+                    .disabled(model.loading.contains(.cache))
+                    .accessibilityLabel("Measure the cache size again")
+                    if model.isClearingCache || model.loading.contains(.cache) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Working")
+                    }
+                    Spacer()
+                }
+                if model.activeJobCount > 0 {
+                    Text("A conversion is running; free space after it finishes.")
+                        .foregroundStyle(.secondary)
+                }
+                if let freedMessage {
+                    Label(freedMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                if let error {
+                    OpsErrorBox(error: error) { self.error = nil }
+                }
+            } header: {
+                Text("Cache")
+            } footer: {
+                Text("Cached audio lets a stopped conversion resume without narrating again. Finished audiobooks are never deleted.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Keep chapter audio files after a conversion", isOn: $settings.keepWork)
+                    .accessibilityLabel("Keep chapter audio files after a conversion")
+            } header: {
+                Text("Advanced")
+            } footer: {
+                Text("Off by default: chapter files are deleted once the audiobook is made, to save disk space. Turn on only for troubleshooting.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .task { await model.refreshCache() }
+        .confirmationDialog("Free disk space?", isPresented: $confirmFree, titleVisibility: .visible) {
+            if let info = model.cacheInfo {
+                Button("Delete Cached Audio (\(Formatters.bytes(info.chunksBytes)))", role: .destructive) { free(includeJobs: false) }
+                    .accessibilityLabel("Delete cached audio only")
+                Button("Also Delete Finished Job Folders (\(Formatters.bytes(info.totalBytes)))", role: .destructive) {
+                    free(includeJobs: true)
+                }
+                .accessibilityLabel("Delete cached audio and finished job folders")
+            }
+            Button("Cancel", role: .cancel) {}
+                .accessibilityLabel("Keep everything")
+        } message: {
+            Text("Finished audiobooks are kept. Deleting job folders also removes those jobs, with their progress history, from the Jobs list.")
+        }
+    }
+
+    @ViewBuilder
+    private var cacheFigures: some View {
+        if let info = model.cacheInfo {
+            LabeledContent("Cached audio", value: Formatters.bytes(info.chunksBytes))
+            LabeledContent("Job folders", value: Formatters.bytes(info.jobsBytes))
+            LabeledContent("Total", value: Formatters.bytes(info.totalBytes))
+            LabeledContent("Location") {
+                HStack(spacing: 6) {
+                    Text(info.path)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                        .help(info.path)
+                    Button {
+                        FileActions.revealInFinder(URL(fileURLWithPath: info.path))
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Show the engine’s data folder in Finder")
+                    .help("Show in Finder")
+                }
+            }
+        } else if let error = model.errors[.cache] {
+            OpsErrorBox(error: error)
+        } else if model.loading.contains(.cache) {
+            Text("Measuring…").foregroundStyle(.secondary)
+        } else {
+            Text("The cache size is not known yet.").foregroundStyle(.secondary)
+        }
+    }
+
+    private func free(includeJobs: Bool) {
+        error = nil
+        freedMessage = nil
+        Task {
+            do {
+                let bytes = try await model.clearCache(includeFinishedJobs: includeJobs)
+                freedMessage = OpsCacheText.freed(bytes)
+            } catch {
+                self.error = EngineError(error)
+            }
+        }
+    }
+}

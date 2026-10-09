@@ -1,0 +1,1 @@
+{"event": "benchmark", "engine": "kokoro", "voice": "af_heart", "lang": "en", "batch": 1, "chunks": 6, "chars": 1197, "load_s": 0.25, "warmup_s": 4.58, "wall_s": 2.52, "audio_s": 72.0, "chars_per_s": 474.4, "realtime_x": 28.54, "seconds_per_char": 0.0602, "peak_memory_gb": 2.77, "runs": [2.52]}
