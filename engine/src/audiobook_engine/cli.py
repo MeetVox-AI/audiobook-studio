@@ -438,7 +438,7 @@ def voices_cmd(
             _fail("action must be list, download, add, replace, remove or transcript")
     except typer.Exit:
         raise
-    except (voices.VoiceInUse, CleanupModelMissing) as exc:
+    except (voices.VoiceInUse, voices.VoiceProblem, voices.VoiceNotFound, CleanupModelMissing) as exc:
         _fail(str(exc), 1)  # already a sentence for the user
     except Exception as exc:
         _fail(f"{type(exc).__name__}: {exc}", 1)
