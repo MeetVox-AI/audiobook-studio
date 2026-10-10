@@ -15,6 +15,8 @@ struct RootView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if showsSetupBanner {
                         SetupBanner()
+                    } else if model.engineNeedsUpdate || model.isUpdatingEngine || model.engineUpdateError != nil {
+                        EngineUpdateBanner()
                     } else if let problem = model.errors[.engines] {
                         EngineProblemBanner(error: problem)
                     }
@@ -36,6 +38,7 @@ struct RootView: View {
             }
         }
         .animation(.smooth(duration: 0.25), value: model.setup.isPresented)
+
         // First launch: the terms of use must be accepted. (The self-test tour has its own settings and skips it.)
         .sheet(isPresented: Binding(
             get: { !model.settings.hasAcceptedTerms && (SnapshotTour.directory == nil || SnapshotTour.showTerms) },
@@ -76,6 +79,7 @@ private struct DetailRouter: View {
 
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(Updater.self) private var updater
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -115,16 +119,29 @@ private struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SettingsLink {
-                Label("Settings", systemImage: "gear")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // A new version of the app: a small button in the Settings row, never a window.
+            HStack(spacing: 0) {
+                settingsLink
+                if let notice = updater.notice {
+                    AppUpdateButton(notice: notice) { updater.performNotice() }
+                        .padding(.trailing, 12)
+                }
             }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .accessibilityLabel("Open Settings")
-            .help("Engine location, output folder, audio quality and notifications")
         }
+    }
+
+    private var settingsLink: some View {
+        SettingsLink {
+            Label("Settings", systemImage: "gear")
+                .lineLimit(1)
+                .fixedSize()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityLabel("Open Settings")
+        .help("Engine location, output folder, audio quality and notifications")
     }
 
     /// Dark mode: grey sidebar icons instead of the accent (indigo is hard to read on dark).
@@ -254,5 +271,39 @@ private struct DropHighlight: View {
             .padding(10)
             .allowsHitTesting(false)
             .accessibilityLabel("Drop an EPUB or PDF to make an audiobook")
+    }
+}
+
+/// Next to Settings in the sidebar: a new version of the app is downloaded ("Update Now" restarts; otherwise it
+/// installs silently when the app quits) or, with automatic updates off, available ("Update…").
+struct AppUpdateButton: View {
+    let notice: Updater.Notice
+    let action: () -> Void
+
+    var body: some View {
+        Button(Self.buttonTitle(notice), action: action)
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.small)
+            .fixedSize()
+            .help(Self.help(notice))
+            .accessibilityLabel(Self.buttonTitle(notice))
+            .accessibilityHint(Self.help(notice))
+    }
+
+    static func buttonTitle(_ notice: Updater.Notice) -> String {
+        switch notice {
+        case .readyToInstall: return "Update Now"
+        case .available: return "Update…"
+        }
+    }
+
+    static func help(_ notice: Updater.Notice) -> String {
+        switch notice {
+        case .readyToInstall:
+            return "Audiobook Studio \(notice.version) is downloaded. Update Now restarts the app to use it; otherwise it installs when you quit."
+        case .available:
+            return "Audiobook Studio \(notice.version) is available. Click to install it; otherwise you keep this version."
+        }
     }
 }

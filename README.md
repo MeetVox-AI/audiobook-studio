@@ -71,15 +71,17 @@ Your Mac measures itself, so the app's estimates are for *your* machine.
 
 **1. Download** the latest `AudiobookStudio-x.y.z.dmg` from the [Releases page](https://github.com/MeetVox-AI/audiobook-studio/releases/latest), open it and drag **Audiobook Studio** to Applications. The app is signed with a Developer ID and notarized by Apple.
 
-**2. Install the narration engine** (once). The app drives a local Python engine and the AI voice models, which are too large to ship inside the app. Open Terminal and paste:
+**2. Open Audiobook Studio.** On first launch it sets up the narration engine for you: the app drives a local Python engine and the AI voice models, which are too large to ship inside the app. The setup installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, puts the engine under `~/Library/Application Support/AudiobookStudio`, and downloads the models you choose, with every size shown first. You need an Apple Silicon Mac, macOS 26 or later, and [Homebrew](https://brew.sh).
+
+If you prefer Terminal, the same [short script](scripts/install-engine.sh) does it (it also downloads the default models and four reference voices, about **12 GB**, one time):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/scripts/install-engine.sh | bash
 ```
 
-It installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, sets up the engine under `~/Library/Application Support/AudiobookStudio`, and downloads the default models and four reference voices (about **12 GB**, one time). You need an Apple Silicon Mac, macOS 26 or later, and [Homebrew](https://brew.sh). Read the script first if you like: it is [short](scripts/install-engine.sh).
+**3. Drop a book** on the window.
 
-**3. Open Audiobook Studio** and drop a book on the window.
+**Updates.** With automatic updates on (the default, Settings → About), new versions download in the background and install when you quit, and the engine is updated for you when a version needs it: nothing pops up. Meanwhile an **Update Now** button next to Settings restarts the app into the new version. With automatic updates off, that button and a banner are the only signs; ignore them and you keep your current version.
 
 <details>
 <summary><b>Build from source instead</b></summary>

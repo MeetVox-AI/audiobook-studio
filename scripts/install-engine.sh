@@ -30,7 +30,13 @@ done
 
 say "Getting the engine into $SRC"
 mkdir -p "$PREFIX"
-if [[ -d "$SRC/.git" ]]; then git -C "$SRC" pull --ff-only; else git clone --depth 1 "$REPO" "$SRC"; fi
+if [[ -d "$SRC/.git" ]]; then
+  # Copies installed before the project moved still point at its old address: follow the current one.
+  git -C "$SRC" remote set-url origin "$REPO"
+  git -C "$SRC" pull --ff-only
+else
+  git clone --depth 1 "$REPO" "$SRC"
+fi
 
 say "Setting up the Python environment"
 (cd "$SRC/engine" && uv sync)

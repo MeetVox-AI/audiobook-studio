@@ -339,10 +339,11 @@ def benchmark(
 @app.command()
 def engines() -> None:
     """List installed engines with their voices, licenses and saved speed measurements."""
+    from . import API_VERSION
     from .perf import load_rates
     from .tts import specs
 
-    _emit({"engines": [s.to_json() for s in specs().values()], "measured": load_rates()})
+    _emit({"engines": [s.to_json() for s in specs().values()], "measured": load_rates(), "api": API_VERSION})
 
 
 @app.command()
