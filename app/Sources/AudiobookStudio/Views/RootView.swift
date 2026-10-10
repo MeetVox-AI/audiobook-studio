@@ -13,7 +13,9 @@ struct RootView: View {
         } detail: {
             DetailRouter(selection: model.selection ?? .newBook)
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if let problem = model.errors[.engines] {
+                    if showsSetupBanner {
+                        SetupBanner()
+                    } else if let problem = model.errors[.engines] {
                         EngineProblemBanner(error: problem)
                     }
                 }
@@ -27,6 +29,13 @@ struct RootView: View {
         .overlay {
             if isDropTargeted { DropHighlight() }
         }
+        // First run: the setup covers the window until the person finishes or skips it.
+        .overlay {
+            if model.setup.isPresented && model.settings.hasAcceptedTerms {
+                SetupView().transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: model.setup.isPresented)
         // First launch: the terms of use must be accepted. (The self-test tour has its own settings and skips it.)
         .sheet(isPresented: Binding(
             get: { !model.settings.hasAcceptedTerms && (SnapshotTour.directory == nil || SnapshotTour.showTerms) },
@@ -34,6 +43,16 @@ struct RootView: View {
         )) {
             TermsSheet { model.settings.acceptTerms() }
         }
+    }
+}
+
+extension RootView {
+    /// The friendly setup banner replaces the engine error while the setup is unfinished (engine not installed,
+    /// no voice yet, or the setup working / failed in the background).
+    fileprivate var showsSetupBanner: Bool {
+        guard !model.setup.isPresented else { return false }
+        if model.setup.isWorking || model.setup.error != nil { return true }
+        return model.settings.setupState != .completed && model.needsSetup
     }
 }
 

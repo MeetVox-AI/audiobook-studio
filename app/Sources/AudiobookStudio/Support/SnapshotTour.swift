@@ -44,6 +44,10 @@ enum SnapshotTour {
             let file = dir.appendingPathComponent("empty-\(appearanceName).png")
             if await snap(to: file) { shots.append(file.lastPathComponent) }
         }
+        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=1 captures each setup step; =run also installs for real (kokoro, English).
+        if let mode = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP"], !mode.isEmpty {
+            await setupTour(model: model, run: mode == "run", dir: dir, shots: &shots, report: &report)
+        }
         if external { await settingsTour(dir: dir, shots: &shots) }
         if ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_ONLY"] == "settings" {
             report["screens"] = shots
@@ -107,6 +111,13 @@ enum SnapshotTour {
         NSApp.terminate(nil)
     }
 
+    /// A Kokoro preset that reads `language` (the American English default when Kokoro has none).
+    private static func snapshotPreset(for language: String, model: AppModel) -> String {
+        if language == "en" { return "af_heart" }
+        return model.engineList?.engine("kokoro")?.voices.first { $0.lang == language }?.id
+            ?? (language == "fr" ? "ff_siwis" : "af_heart")
+    }
+
     /// End-to-end through the app: sample, then a detached one-chapter conversion followed to the end.
     private static func convertTour(model: AppModel, dir: URL, report: inout [String: Any], shots: inout [String]) async {
         guard var draft = model.draft else { report["action_error"] = "no book open"; return }
@@ -117,7 +128,7 @@ enum SnapshotTour {
         // AUDIOBOOK_STUDIO_SNAPSHOT_PRESET picks another Kokoro preset (e.g. one not in the sentence cache, so the
         // conversion really narrates and the progress screen can be captured).
         let preset = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_PRESET"].flatMap { $0.isEmpty ? nil : $0 }
-        let voice = VoiceSelection(engineId: "kokoro", presetId: preset ?? (draft.language == "fr" ? "ff_siwis" : "af_heart"))
+        let voice = VoiceSelection(engineId: "kokoro", presetId: preset ?? snapshotPreset(for: draft.language, model: model))
         model.voiceSelection = voice
         model.selection = .newBook
 
@@ -201,7 +212,7 @@ enum SnapshotTour {
         let control = segmentedControl(in: window.contentView?.superview ?? window.contentView)
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (index, section) in ["General", "Voices", "Storage", "About"].enumerated() {
+            for (index, section) in ["General", "Voices", "Languages", "Storage", "About"].enumerated() {
                 if let control, index < control.segmentCount {
                     control.selectedSegment = index
                     control.sendAction(control.action, to: control.target)
@@ -281,6 +292,42 @@ enum SnapshotTour {
     static func press(_ element: NSObject) -> Bool {
         if let button = element as? NSAccessibilityButton { return button.accessibilityPerformPress() }
         return element.perform(NSSelectorFromString("accessibilityPerformPress")) != nil
+    }
+
+    static func setupTour(model: AppModel, run: Bool, dir: URL, shots: inout [String], report: inout [String: Any]) async {
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (name, step) in [("welcome", SetupStep.welcome), ("languages", .languages), ("models", .models), ("review", .review)] {
+                model.setup.present(from: step)
+                try? await Task.sleep(for: .seconds(1))
+                let file = dir.appendingPathComponent("setup-\(name)-\(appearanceName).png")
+                if await snap(to: file) { shots.append(file.lastPathComponent) }
+            }
+        }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        if run {
+            model.setup.languages = ["en"]
+            model.setup.chosen = ["kokoro"]
+            model.setup.present(from: .review)
+            model.setup.start()
+            var n = 0
+            while model.setup.isWorking, n < 120 {
+                try? await Task.sleep(for: .seconds(5))
+                n += 1
+                if n % 4 == 0 {
+                    let file = dir.appendingPathComponent("setup-run-\(n).png")
+                    if await snap(to: file) { shots.append(file.lastPathComponent) }
+                }
+            }
+            let file = dir.appendingPathComponent("setup-after.png")
+            if await snap(to: file) { shots.append(file.lastPathComponent) }
+            report["setup_error"] = model.setup.error?.message ?? NSNull()
+            report["setup_error_details"] = model.setup.error?.stderrTail ?? NSNull()
+            report["setup_items"] = model.setup.items.map { "\($0.id)=\($0.state)" }
+            report["setup_engine_exists"] = FileManager.default.isExecutableFile(atPath: model.settings.enginePath)
+            report["setup_models_installed"] = model.models.filter(\.installed).map(\.engine)
+            report["setup_state"] = model.settings.setupState.rawValue
+        }
     }
 
     static func snap(to url: URL) async -> Bool {

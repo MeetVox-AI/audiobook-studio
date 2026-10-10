@@ -137,6 +137,18 @@ def _voice_choice(spec, voice: Optional[str], ref: Optional[Path], ref_text: Opt
     return VoiceChoice(voice) if voice is not None else None
 
 
+def _lang_or_raise(lang: Optional[str]) -> Optional[str]:
+    """Registry code for any accepted spelling ("pt-BR" -> "pt"); None stays None (use the book's language)."""
+    from .languages import codes, normalize_code
+
+    if lang is None:
+        return None
+    code = normalize_code(lang)
+    if code is None:
+        raise OptionError(f"Unsupported language '{lang}'. Supported: {', '.join(codes())}.")
+    return code
+
+
 def _options(engine: str, voice: Optional[str], ref: Optional[Path], ref_text: Optional[str], lang: Optional[str],
              speed: float, sections: Optional[str], out_dir: Optional[Path], bitrate: int, intro: bool, *,
              ref_voice: Optional[str] = None, verify: Optional[bool] = None, keep_work: bool = False):
@@ -147,6 +159,7 @@ def _options(engine: str, voice: Optional[str], ref: Optional[Path], ref_text: O
     spec = specs().get(engine)
     if spec is None:
         raise OptionError(f"Unknown engine '{engine}'. Available: {', '.join(specs())}")
+    lang = _lang_or_raise(lang)
     choice = _voice_choice(spec, voice, ref, ref_text, ref_voice)
     return ConvertOptions(engine=engine, voice=choice, lang=lang, speed=speed, sections=_parse_sections(sections),
                           out_dir=out_dir, bitrate_k=bitrate, intro=intro, verify=verify, keep_work=keep_work)
@@ -170,7 +183,7 @@ def convert(
     verify: Optional[bool] = typer.Option(None, "--verify/--no-verify",
                                           help="Speech check with Whisper (default: on for sampling engines)"),
     keep_work: bool = typer.Option(False, help="Keep chapter audio files in the job folder after success"),
-    lang: Optional[str] = typer.Option(None, help="Override the book language (en, fr)"),
+    lang: Optional[str] = typer.Option(None, help="Override the book language (any supported code, e.g. en, fr, es, de, zh)"),
     speed: float = typer.Option(1.0, min=0.5, max=2.0),
     sections: Optional[str] = typer.Option(None, help="Section indexes, e.g. '2-14,20' (default: auto-selected)"),
     out_dir: Optional[Path] = typer.Option(None, help="Output folder (default: next to the book)"),
@@ -303,17 +316,16 @@ def benchmark(
     ref: Optional[Path] = typer.Option(None),
     ref_text: Optional[str] = typer.Option(None),
     ref_voice: Optional[str] = typer.Option(None, help="Installed reference voice id to clone"),
-    lang: str = typer.Option("en", help="en or fr"),
+    lang: str = typer.Option("en", help="Language code (en, fr, es, de, it, pt, ru, zh, ja, ko, hi, ar, nl)"),
     batch: Optional[int] = typer.Option(None, min=1, help="Override batch size (experiments; not saved)"),
     repeats: int = typer.Option(1, min=1, max=10),
 ) -> None:
     """Measure an engine's speed and memory on this Mac with a fixed passage."""
     from . import jobs
-    from .benchmark import PASSAGES, run
+    from .benchmark import run
 
-    if lang not in PASSAGES:
-        _fail(f"No benchmark passage for '{lang}'. Use one of: {', '.join(PASSAGES)}.")
     opts = _options_or_fail(engine, voice, ref, ref_text, lang, 1.0, None, None, 64, False, ref_voice=ref_voice)
+    lang = opts.lang  # normalised registry code
     try:
         from .pipeline import resolve_voice
 
@@ -366,7 +378,7 @@ def voices_cmd(
     target: Optional[str] = typer.Argument(None, help="Voice id, or a clip file for 'add'"),
     text: Optional[str] = typer.Argument(None, help="New transcript for 'transcript'"),
     name: Optional[str] = typer.Option(None, help="Display name for 'add'"),
-    lang: Optional[str] = typer.Option(None, help="Language of the clip for 'add' (en, fr)"),
+    lang: Optional[str] = typer.Option(None, help="Language of the clip for 'add' (any supported code)"),
     transcript: Optional[str] = typer.Option(None, help="Exact words spoken in the clip ('add'; else Whisper)"),
     i_have_rights: bool = typer.Option(False, "--i-have-rights",
                                        help="Confirm you have the right to use this voice (required for 'add')"),
@@ -393,8 +405,12 @@ def voices_cmd(
         elif action == "add":
             if not i_have_rights:
                 _fail("Adding a voice requires --i-have-rights: only use voices you are allowed to clone.")
-            if lang not in {"en", "fr"}:
-                _fail("Give the clip language with --lang en or --lang fr.")
+            try:
+                lang = _lang_or_raise(lang)
+            except OptionError as exc:
+                _fail(str(exc))
+            if lang is None:
+                _fail("Give the clip language with --lang (e.g. --lang en).")
             iv = voices.add_user_clip(Path(target), name or Path(target).stem, lang, transcript)
             _emit({"event": "done", **iv.to_json(), "installed": True})
         elif action == "remove":
@@ -411,6 +427,36 @@ def voices_cmd(
         raise
     except voices.VoiceInUse as exc:
         _fail(str(exc), 1)  # already a sentence for the user
+    except Exception as exc:
+        _fail(f"{type(exc).__name__}: {exc}", 1)
+
+
+@app.command("languages")
+def languages_cmd(
+    action: str = typer.Argument("list", help="list | add | remove"),
+    code: Optional[str] = typer.Argument(None, help="Language code (es, de, zh...)"),
+) -> None:
+    """Languages on demand: list them, switch one on (downloads its small reference voices) or off."""
+    from . import language_packs, languages as registry
+
+    if action == "list":
+        _emit({"languages": language_packs.list_all()})
+        return
+    if action not in {"add", "remove"}:
+        _fail("action must be list, add or remove")
+    if not code:
+        _fail("Give a language code, for example: languages add es")
+    try:
+        lang = registry.get(code)
+    except KeyError:
+        _fail(f"Unsupported language '{code}'. Supported: {', '.join(registry.codes())}.")
+    try:
+        if action == "add":
+            _emit(language_packs.add(lang.code, emit=_emit))
+        else:
+            _emit(language_packs.remove(lang.code))
+    except language_packs.LanguageError as exc:
+        _fail(str(exc), 1)
     except Exception as exc:
         _fail(f"{type(exc).__name__}: {exc}", 1)
 

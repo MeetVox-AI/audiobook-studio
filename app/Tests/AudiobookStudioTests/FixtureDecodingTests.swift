@@ -28,7 +28,8 @@ enum Fixtures {
     /// Fixture file → test that decodes it. A new fixture without an entry fails `everyFixtureIsDecoded`.
     static let decoded: Set<String> = [
         "benchmark.json", "cache_info.json", "convert_events.jsonl", "detached.json", "engines.json",
-        "error.json", "inspect_en.json", "inspect_fr.json", "job_status.json", "jobs_list.json",
+        "error.json", "inspect_en.json", "inspect_fr.json", "job_status.json", "jobs_list.json", "languages_list.json",
+        "languages_list_variant.json",
         "models_list.json", "sample_events.jsonl", "voices_list.json",
     ]
 }

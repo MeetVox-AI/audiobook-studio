@@ -21,17 +21,22 @@ from .base import EngineError, EngineSpec, Voice, VoiceChoice, check_preset
 
 CUSTOM = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
 BASE = "mlx-community/Qwen3-TTS-12Hz-1.7B-Base-8bit"
-LANG = {"en": "english", "fr": "french"}
+from .. import languages as _languages
+
+# The Qwen3-TTS language names, from the shared registry (the checkpoint's codec_language_id has these ten).
+LANG = {c: lang.qwen3 for c, lang in _languages.LANGUAGES.items() if lang.qwen3}
 TOKENS_PER_SECOND = 12.5  # "12Hz" codec
 
 SPEC = EngineSpec(
     id="qwen3",
     name="Qwen3-TTS 1.7B",
     checkpoint=CUSTOM,
-    languages=("en", "fr"),
+    languages=tuple(LANG),
     license="Apache-2.0",
     noncommercial=False,
-    chunk_cap={"en": 300, "fr": 300},   # long single prompts degrade; 1-2 sentences per item
+    # Long single prompts degrade; 1-2 sentences per item. Dense scripts (Chinese, Japanese) hold much more
+    # speech per character, so their caps are smaller (registry chunk_scale).
+    chunk_cap={c: round(300 * _languages.LANGUAGES[c].chunk_scale) for c in LANG},
     min_chunk=12,
     batch_size=8,  # measured on M4 Pro: batch 4 = 3.0x, 8 = 4.9x, 12 = 5.2x, 16 = 3.6x real time
     supports_presets=True,
@@ -40,14 +45,23 @@ SPEC = EngineSpec(
     deterministic=False,
     download_gb=6.2,
     voices=[
-        Voice("ryan", "Ryan", "en", "male", "English", "Native English speaker"),
-        Voice("aiden", "Aiden", "en", "male", "English", "Native English speaker"),
-        Voice("vivian", "Vivian", "en", "female", "Chinese-native", "May carry an accent in English/French"),
-        Voice("serena", "Serena", "en", "female", "Chinese-native", "May carry an accent in English/French"),
-        Voice("ono_anna", "Ono Anna", "en", "female", "Japanese-native", "May carry an accent"),
-        Voice("sohee", "Sohee", "en", "female", "Korean-native", "May carry an accent"),
+        Voice("ryan", "Ryan", "en", "male", "English", "Native English speaker",
+              also=("fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko")),
+        Voice("aiden", "Aiden", "en", "male", "English", "Native English speaker",
+              also=("fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko")),
+        # Chinese, Japanese and Korean have native speakers. The others speak the other languages too, with an
+        # accent: for a European language the best result comes from cloning a reference clip in that language.
+        Voice("vivian", "Vivian", "zh", "female", "Chinese-native", "Native Chinese; other languages with an accent",
+              also=("en", "fr", "es", "de", "it", "pt", "ru", "ja", "ko")),
+        Voice("serena", "Serena", "zh", "female", "Chinese-native", "Native Chinese; other languages with an accent",
+              also=("en", "fr", "es", "de", "it", "pt", "ru", "ja", "ko")),
+        Voice("ono_anna", "Ono Anna", "ja", "female", "Japanese-native", "Native Japanese; others with an accent",
+              also=("en", "fr", "es", "de", "it", "pt", "ru", "zh", "ko")),
+        Voice("sohee", "Sohee", "ko", "female", "Korean-native", "Native Korean; others with an accent",
+              also=("en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja")),
     ],
-    notes="Best open-model French accuracy. No native French preset: clone a French reference clip for French books.",
+    notes="Default engine, ten languages. Preset voices are native in English, Chinese, Japanese and Korean; for "
+          "French, Spanish, German, Italian, Portuguese and Russian clone a reference clip in that language.",
     # The CustomVoice config.json (spk_id, revision 41d3337) also has these Chinese-native speakers
     # (eric: Sichuan dialect, dylan: Beijing dialect; the dialect only applies to Chinese text).
     # Accepted, not listed. Any other speaker in the cached or loaded config is accepted too.
@@ -162,7 +176,9 @@ class Qwen3Engine:
         if seed is not None:
             mx.random.seed(seed)
         longest = max(len(t) for t in texts)
-        max_tokens = int(max(75, 2.5 * TOKENS_PER_SECOND * longest * 0.062))
+        from ..audio.validate import seconds_per_char
+
+        max_tokens = int(max(75, 2.5 * TOKENS_PER_SECOND * longest * seconds_per_char(lang)))
         common = {"lang_code": LANG[lang], "temperature": self.temperature, "top_k": self.top_k, "top_p": self.top_p,
                   "repetition_penalty": self.repetition_penalty, "max_tokens": max_tokens}
         if voice.ref_audio and not voice.ref_text:

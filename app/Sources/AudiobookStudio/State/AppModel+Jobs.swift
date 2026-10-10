@@ -66,12 +66,11 @@ extension AppModel {
         engines.flatMap { opsNarratorChoices(engine: $0, language: language) }
     }
 
-    /// Languages the engines speak, English and French first (["en", "fr"] before engines are loaded).
+    /// Languages that are on and that an engine speaks, in registry order (the enabled ones before engines are loaded).
     var opsLanguages: [String] {
         let all = Set(engines.flatMap(\.languages))
-        let preferred = ["en", "fr"]
-        guard !all.isEmpty else { return preferred }
-        return preferred.filter(all.contains) + all.subtracting(preferred).sorted()
+        guard !all.isEmpty else { return enabledLanguageCodes }
+        return enabledLanguageCodes.filter(all.contains)
     }
 
     /// The engine's model is installed; nil when `models list` has no entry for it (not loaded yet).
@@ -105,8 +104,9 @@ extension AppModel {
             ?? engines[0]
         let lang = language.flatMap { engine.languages.contains($0) ? $0 : nil }
             ?? (draft.map(\.language).flatMap { engine.languages.contains($0) ? $0 : nil })
+            ?? engine.languages.first(where: isEnabled)
             ?? engine.languages.first
-            ?? "en"
+            ?? fallbackLanguage
         let choices = opsNarratorChoices(engine: engine, language: lang)
         let preferredId = choiceId ?? voiceSelection.map(OpsNarratorChoice.key)
         let choice = choices.first { $0.id == preferredId } ?? choices.first

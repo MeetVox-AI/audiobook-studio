@@ -92,7 +92,7 @@ struct BenchmarkView: View {
             GridRow {
                 Text("Language").foregroundStyle(.secondary)
                 Picker("Language", selection: languageBinding(s)) {
-                    ForEach(s.engine.languages, id: \.self) { code in
+                    ForEach(s.engine.languages.filter { model.isEnabled($0) || $0 == s.language }, id: \.self) { code in
                         Text(Formatters.languageName(code)).tag(code)
                     }
                 }

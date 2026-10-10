@@ -55,6 +55,9 @@ private struct BookDraftScreen: View {
                 if let job = activeJobForBook {
                     activeJobBanner(job)
                 }
+                if let language = model.bookLanguageToAdd {
+                    BookLanguageBanner(language: language)
+                }
                 BookHeaderView(draft: draft, cover: coverImage)
                 BookNarratorPanel(draft: draft)
                 BookSamplePanel(draft: draft, run: currentSample, section: $sampleSection,

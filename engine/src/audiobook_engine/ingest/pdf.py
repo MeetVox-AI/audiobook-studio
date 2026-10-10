@@ -13,6 +13,7 @@ Scanned PDFs (no text layer) are rejected: OCR is not part of v1.
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,14 +21,40 @@ from pathlib import Path
 import pymupdf
 
 from ..models import Book, Cover, IngestError, Section
-from .classify import classify_section, detect_language, front_matter_signals, looks_like_title, normalize_language
+from .classify import (
+    classify_section,
+    detect_language,
+    front_matter_signals,
+    is_supported_language,
+    looks_like_title,
+    normalize_language,
+    unsupported_language_message,
+)
+from .estimate import LangSection, apply_language
+from . import vocab as lexicon
 
 MARGIN_FRACTION = 0.08
 # A margin text seen on LOCAL_MIN of any LOCAL_WINDOW consecutive pages is a running head.
 LOCAL_WINDOW = 10
 LOCAL_MIN = 3
-_PAGE_NUM = re.compile(r"^\s*([\divxlcdmIVXLCDM]{1,6}|page\s+\d+|\d+\s*/\s*\d+|[-–—]\s*\d+\s*[-–—])\s*$", re.IGNORECASE)
-_END_PUNCT = re.compile(r"[.!?…:»”\"')\]]\s*$")
+_PAGE_NUM = re.compile(
+    r"^\s*([\divxlcdmIVXLCDM]{1,6}|page\s+\d+|\d+\s*/\s*\d+|[-–—]\s*\d+\s*[-–—]"
+    r"|(?:p\.|pág\.?|página|pagina|pag\.|seite|s\.|blz\.?|стр\.?|страница|صفحة|पृष्ठ)\s*\d+"
+    r"|第\s*\d+\s*[页頁ページ]|\d+\s*(?:ページ|쪽|페이지))\s*$",
+    re.IGNORECASE,
+)
+# (。！？」』） end Chinese/Japanese sentences, । Hindi, ؟ Arabic questions)
+_END_PUNCT = re.compile(r"[.!?…:»”\"')\]。！？」』）】》〉｡।॥؟۔]\s*$")
+
+
+def _continues(text: str) -> bool:
+    """A block that picks up a sentence from the previous page: starts in lower case, or in a script with no case."""
+    if re.match(r"[a-zà-ÿ,;]", text) or text[:1].islower():
+        return True
+    return unicodedata.category(text[:1] or " ") == "Lo"  # Han, kana, Hangul, Devanagari, Arabic...
+
+
+_CJK_EDGE = re.compile(r"[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]")
 # Synthetic sections shorter than this, before the first outline entry, are front matter.
 OPENING_PAGES_MAX_CHARS = 3000
 
@@ -140,6 +167,8 @@ def _join(head: str, tail: str, lang: str | None, vocab: Counter) -> str:
         if head[-2].islower() and tail[0].isupper():
             return head + tail  # Jean-Pierre, anti-American: never a split word
         return head[:-1] + tail if _soft_hyphen(head, tail, lang, vocab) else head + tail
+    if head and tail and _CJK_EDGE.match(head[-1]) and _CJK_EDGE.match(tail[0]):
+        return head + tail  # Chinese and Japanese put no space between the lines of a paragraph
     return head + " " + tail
 
 
@@ -153,6 +182,21 @@ def _join_lines(lines: list[str], lang: str | None, vocab: Counter) -> str:
 # --------------------------------------------------------------------------- outline
 
 _PART_TITLE = re.compile(r"^\s*(?:part|partie|book|livre|volume|tome)\b", re.IGNORECASE)
+# Part words of the other Latin/Cyrillic-script languages ("Parte", "Teil", "Deel", "Часть"); Chinese,
+# Japanese, Korean, Arabic and Hindi parts ("第一部", "제2부", "الجزء", "भाग") come from lexicon.heading_group.
+_PART_TITLE_OTHER = re.compile(
+    r"^\s*(?i:" + "|".join(sorted({re.escape(w) for ws in lexicon.PART_WORDS.values() for w in ws if w.isalpha()
+                                 and (w.isascii() or "а" <= w[0] <= "я")}, key=len, reverse=True)) + r")\b"
+)
+
+
+def _is_part(title: str) -> bool:
+    return bool(_PART_TITLE.match(title) or _PART_TITLE_OTHER.match(title) or lexicon.heading_group(title) == "part")
+
+
+def _labelled_chapter(title: str) -> bool:
+    """"Chapter 3", "Chapitre IV", "Capítulo 3", "Kapitel 4", "Глава 5", "第三章", "제3장", "الفصل الأول", "अध्याय 4"."""
+    return bool(_LABELLED_CHAPTER.match(title)) or lexicon.heading_group(title) == "chapter"
 _SUBSECTION_TITLE = re.compile(r"^\s*\d+\.\d+")
 _LABELLED_CHAPTER = re.compile(r"^\s*(?i:chapter|chapitre|ch\.)\s*(?:\d+|[IVXLCDMivxlcdm]+)\b")
 # A bare number: "3", "3. The Boy", "III", "IV The Return"; not "I Am Here" (the pronoun).
@@ -163,13 +207,13 @@ PART_PAGE_MAX_CHARS = 600
 
 
 def _chapter_like(title: str) -> bool:
-    return bool(_LABELLED_CHAPTER.match(title) or _BARE_NUMBER.match(title))
+    return _labelled_chapter(title) or _bare_number(title) is not None
 
 
 def _bare_number(title: str) -> int | None:
     m = _BARE_NUMBER.match(title)
     if not m:
-        return None
+        return lexicon.bare_cjk_number(title)  # "一、概述"
     if m.group(1):
         return int(m.group(1))
     vals = [_ROMAN[c] for c in m.group(2)]
@@ -217,12 +261,12 @@ def _outline_level(toc: list, page_chars: list[int] | None = None) -> int:
             break
         if sum(1 for c in children if _SUBSECTION_TITLE.match(c)) * 2 > len(children):
             break
-        if sum(1 for p in parents if _PART_TITLE.match(p)) * 2 >= len(parents):
+        if sum(1 for p in parents if _is_part(p)) * 2 >= len(parents):
             use += 1  # Part One, Book II
             continue
         if sum(1 for p in parents if _chapter_like(p)) * 2 > len(parents):
             break  # Chapter 3 {sections}, 3 {sections}
-        if sum(1 for c in children if _LABELLED_CHAPTER.match(c)) >= 0.6 * len(children):
+        if sum(1 for c in children if _labelled_chapter(c)) >= 0.6 * len(children):
             use += 1  # The Early Years {Chapter 1, Chapter 2}
             continue
         if page_chars is not None:
@@ -235,7 +279,7 @@ def _outline_level(toc: list, page_chars: list[int] | None = None) -> int:
                 continue
         numbers = [[n for n in map(_bare_number, kids) if n is not None] for _, _, kids in groups]
         numbers = [ns for ns in numbers if ns]
-        if sum(1 for c in children if _BARE_NUMBER.match(c)) >= 0.6 * len(children):
+        if sum(1 for c in children if _bare_number(c) is not None) >= 0.6 * len(children):
             if len(numbers) >= 2 and all(b[0] > a[-1] for a, b in zip(numbers, numbers[1:])):
                 use += 1  # The Early Years {1, 2, 3}, The War {4, 5, 6}: chapters numbered through the book
                 continue
@@ -354,7 +398,7 @@ def read_pdf(path: str | Path) -> Book:
             and b is pages_blocks[b.page][0]
             and abs(b.size - merged[-1].size) < 0.6
             and not _END_PUNCT.search(merged[-1].text)
-            and re.match(r"[a-zà-ÿ,;]", b.text)
+            and _continues(b.text)
         ):
             merged[-1].text = _join(merged[-1].text, b.text, lang_hint, vocab)
             continue
@@ -417,7 +461,7 @@ def read_pdf(path: str | Path) -> Book:
     for n, raw in enumerate(joined):
         blocks = raw["blocks"]
         title = raw["title"] or f"Section {n + 1}"
-        sec = Section(
+        sec = LangSection(
             index=n,
             title=title,
             kind="chapter",
@@ -442,9 +486,17 @@ def read_pdf(path: str | Path) -> Book:
     author = (meta.get("author") or "").strip() or "Unknown"
     sample = " ".join(b.text for b in merged)[:200000]
     detected = detect_language(sample)
-    language = normalize_language(detected) or "en"
-    if detected is None:
+    pdf_lang = _pdf_language(doc)
+    language, lang_source = normalize_language(detected) or "en", "detected" if detected else "default"
+    if detected is None and pdf_lang:
+        # the PDF's own /Lang is only trusted when the text gives no answer (producers often write "en-US")
+        language, lang_source = pdf_lang, "metadata"
+    elif detected is None:
         warn.append("Language could not be determined; assuming English.")
+    elif pdf_lang and pdf_lang != language:
+        warn.append(f"The PDF says '{pdf_lang}' but the text looks like '{language}'.")
+    if not is_supported_language(language):
+        warn.append(unsupported_language_message(language))
     if removed:
         warn.append(f"Removed {removed} running header/footer/page-number lines.")
     if not any(s.include for s in sections):
@@ -459,18 +511,29 @@ def read_pdf(path: str | Path) -> Book:
     except Exception as exc:  # rendering failures should not block ingest
         warn.append(f"Could not render a cover from page 1: {exc}")
 
-    return Book(
+    book_obj = Book(
         source_path=str(path),
         format="pdf",
         title=title,
         author=author,
         language=language,
-        language_source="detected" if detected else "default",
+        language_source=lang_source,
         sections=sections,
         cover=cover,
         warnings=warn,
         metadata={"pages": doc.page_count, "outline_entries": len(toc), "body_font_size": body_size},
     )
+    apply_language(book_obj)  # listening-time estimates follow the language
+    return book_obj
+
+
+def _pdf_language(doc) -> str | None:
+    """The document catalog's /Lang entry ("fr-FR", "pt-BR"...) as a language code, if it names a language."""
+    try:
+        kind, value = doc.xref_get_key(doc.pdf_catalog(), "Lang")
+    except Exception:
+        return None
+    return normalize_language(value) if kind == "string" else None
 
 
 def _locate(blocks: list[_Block], page0: int, title: str) -> int | None:

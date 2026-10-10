@@ -56,15 +56,7 @@ struct AddVoiceSheet: View {
                         }
 
                         LabeledContent("Language") {
-                            Picker("Language", selection: $form.language) {
-                                ForEach(AddVoiceForm.languages, id: \.self) { code in
-                                    Text(Formatters.languageName(code)).tag(code)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .fixedSize()
-                            .accessibilityLabel("Language spoken in the recording")
+                            languagePicker
                         }
                     }
                     .formStyle(.columns)
@@ -147,7 +139,25 @@ struct AddVoiceSheet: View {
         .onAppear {
             guard !didSetLanguage else { return }
             didSetLanguage = true
-            form = AddVoiceForm(language: model.draft?.language)
+            form = AddVoiceForm(language: model.draft?.language, languages: model.enabledLanguageCodes)
+        }
+    }
+
+    /// Segmented for two or three languages, a menu for more (only the enabled languages are offered).
+    @ViewBuilder
+    private var languagePicker: some View {
+        let picker = Picker("Language", selection: $form.language) {
+            ForEach(form.languages, id: \.self) { code in
+                Text(Formatters.languageName(code)).tag(code)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel("Language spoken in the recording")
+        if form.languages.count <= 3 {
+            picker.pickerStyle(.segmented)
+        } else {
+            picker.pickerStyle(.menu)
         }
     }
 

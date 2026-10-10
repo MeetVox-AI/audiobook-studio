@@ -9,7 +9,8 @@ struct VoiceBrowser: View {
 
     var body: some View {
         let options = model.filteredVoiceOptions
-        let groups = VoiceCatalog.groups(options, engines: model.engines)
+        let groups = VoiceCatalog.groups(options, engines: model.engines,
+                                         accentLanguage: model.voiceLab.filter.languageCode(bookLanguage: model.draft?.language))
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             SectionHeader("Voices", subtitle: subtitle) {
                 Button(action: addVoice) {
@@ -267,6 +268,11 @@ private struct VoiceOptionRow: View {
     private var chips: some View {
         Chip(text: Formatters.languageName(option.language), systemImage: "globe",
              tint: VoiceStyle.tint(forLanguage: option.language))
+        if let browsed = model.voiceLab.filter.languageCode(bookLanguage: model.draft?.language),
+           option.speaksWithAccent(browsed) {
+            Chip(text: "Speaks \(Formatters.languageName(browsed)) with an accent", systemImage: "character.bubble",
+                 tint: .secondary)
+        }
         if let gender = VoiceText.gender(option.gender) {
             Chip(text: gender, systemImage: "person", tint: .secondary)
         }

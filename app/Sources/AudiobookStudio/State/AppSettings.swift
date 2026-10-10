@@ -53,6 +53,10 @@ final class AppSettings {
     var hasAcceptedTerms: Bool { acceptedTermsVersion >= AppSettings.currentTermsVersion }
     func acceptTerms() { acceptedTermsVersion = AppSettings.currentTermsVersion }
 
+    /// How far the first-run setup got. `.skipped` hides the setup window; a banner offers to finish it.
+    enum SetupState: String, Sendable { case notStarted, skipped, completed }
+    var setupState: SetupState { didSet { save(setupState.rawValue, Key.setup) } }
+
     /// Stored only in v1.
     var pacing: Pacing { didSet { saveCodable(pacing, Key.pacing) } }
 
@@ -86,6 +90,7 @@ final class AppSettings {
         static let pacing = "AudiobookStudio.pacing"
         static let licenses = "AudiobookStudio.acknowledgedLicenses"
         static let terms = "AudiobookStudio.acceptedTermsVersion"
+        static let setup = "AudiobookStudio.setupState"
     }
 
     /// `defaults` is injectable for tests (`UserDefaults(suiteName:)`).
@@ -101,6 +106,7 @@ final class AppSettings {
         pacing = AppSettings.loadCodable(Pacing.self, Key.pacing, defaults) ?? Pacing()
         acknowledgedLicenses = AppSettings.loadCodable(Set<String>.self, Key.licenses, defaults) ?? []
         acceptedTermsVersion = defaults.integer(forKey: Key.terms)
+        setupState = defaults.string(forKey: Key.setup).flatMap(SetupState.init(rawValue:)) ?? .notStarted
     }
 
     func resetEnginePath() { enginePathOverride = nil }

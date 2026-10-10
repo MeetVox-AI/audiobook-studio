@@ -932,8 +932,8 @@ def test_parameter_errors_print_a_json_error_on_stdout(capsys, argv, words):
 
 
 def test_run_cli_returns_the_commands_exit_code_and_reports_crashes_as_json(capsys, monkeypatch):
-    assert cli.run_cli(["benchmark", "--lang", "de"]) == 2  # no passage for this language: no model is loaded
-    assert "No benchmark passage" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])["message"]
+    assert cli.run_cli(["benchmark", "--lang", "xx"]) == 2  # an unsupported language: no model is loaded
+    assert "Unsupported language 'xx'" in json.loads(capsys.readouterr().out.strip().splitlines()[-1])["message"]
 
     def broken():
         raise RuntimeError("unexpected")

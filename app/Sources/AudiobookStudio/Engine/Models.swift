@@ -108,6 +108,13 @@ struct PresetVoice: Codable, Hashable, Identifiable, Sendable {
     var gender: String?
     var accent: String?
     var note: String?
+    /// Other languages this voice can speak, with an accent (absent on older engines).
+    var also: [String]?
+
+    /// Languages the voice speaks natively or with an accent.
+    func speaks(_ language: String) -> Bool { lang == language || (also ?? []).contains(language) }
+    /// True when `language` is one of the voice's secondary languages.
+    func speaksWithAccent(_ language: String) -> Bool { lang != language && (also ?? []).contains(language) }
 }
 
 struct EngineInfo: Codable, Hashable, Identifiable, Sendable {
@@ -234,6 +241,198 @@ struct VoiceEntry: Codable, Hashable, Identifiable, Sendable {
 
 struct VoiceList: Codable, Sendable { var voices: [VoiceEntry] }
 
+// MARK: - languages
+
+/// One engine row of `languages list` for a language.
+struct LanguageEngine: Codable, Hashable, Identifiable, Sendable {
+    var id: String
+    var name: String
+    var installed: Bool
+    var downloadGb: Double?
+    var noncommercial: Bool?
+    var nativePresets: Bool?
+    var cloning: Bool?
+
+    init(id: String, name: String, installed: Bool, downloadGb: Double? = nil, noncommercial: Bool? = nil,
+         nativePresets: Bool? = nil, cloning: Bool? = nil) {
+        self.id = id
+        self.name = name
+        self.installed = installed
+        self.downloadGb = downloadGb
+        self.noncommercial = noncommercial
+        self.nativePresets = nativePresets
+        self.cloning = cloning
+    }
+
+    /// "Voxtral TTS 4B (2.5 GB, non-commercial)".
+    var needText: String {
+        var details: [String] = []
+        if let gb = downloadGb { details.append(Formatters.gigabytes(gb)) }
+        if noncommercial == true { details.append("non-commercial") }
+        return details.isEmpty ? name : "\(name) (\(details.joined(separator: ", ")))"
+    }
+}
+
+/// The reference voices of a language (`languages list` → `voices`).
+struct LanguageVoices: Codable, Hashable, Sendable {
+    var available: Int
+    var installed: Int
+    var bytes: Int64
+    var downloadMb: Double
+
+    static let none = LanguageVoices(available: 0, installed: 0, bytes: 0, downloadMb: 0)
+
+    init(available: Int = 0, installed: Int = 0, bytes: Int64 = 0, downloadMb: Double = 0) {
+        self.available = available
+        self.installed = installed
+        self.bytes = bytes
+        self.downloadMb = downloadMb
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available = try c.decodeIfPresent(Int.self, forKey: .available) ?? 0
+        installed = try c.decodeIfPresent(Int.self, forKey: .installed) ?? 0
+        bytes = try c.decodeIfPresent(Int64.self, forKey: .bytes) ?? 0
+        downloadMb = try c.decodeIfPresent(Double.self, forKey: .downloadMb) ?? 0
+    }
+}
+
+/// One language of the engine's registry (`languages list`).
+struct LanguageInfo: Codable, Hashable, Identifiable, Sendable {
+    var code: String
+    /// English name ("Spanish").
+    var name: String
+    /// Name in the language itself ("Español").
+    var native: String
+    var rtl: Bool
+    var enabled: Bool
+    /// An installed engine can speak the language.
+    var ready: Bool
+    /// Engine id to install when the language is not ready.
+    var recommended: String?
+    var engines: [LanguageEngine]
+    var voices: LanguageVoices
+    var id: String { code }
+
+    init(code: String, name: String? = nil, native: String? = nil, rtl: Bool? = nil, enabled: Bool = false,
+         ready: Bool = true, recommended: String? = nil, engines: [LanguageEngine] = [], voices: LanguageVoices = .none) {
+        let builtin = LanguageRegistry.builtin[code]
+        self.code = code
+        self.name = name ?? builtin?.name ?? code
+        self.native = native ?? builtin?.native ?? name ?? code
+        self.rtl = rtl ?? builtin?.rtl ?? false
+        self.enabled = enabled
+        self.ready = ready
+        self.recommended = recommended
+        self.engines = engines
+        self.voices = voices
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let code = try c.decode(String.self, forKey: .code)
+        self.init(code: code,
+                  name: try c.decodeIfPresent(String.self, forKey: .name),
+                  native: try c.decodeIfPresent(String.self, forKey: .native),
+                  rtl: try c.decodeIfPresent(Bool.self, forKey: .rtl),
+                  enabled: try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false,
+                  ready: try c.decodeIfPresent(Bool.self, forKey: .ready) ?? true,
+                  recommended: try c.decodeIfPresent(String.self, forKey: .recommended),
+                  engines: try c.decodeIfPresent([LanguageEngine].self, forKey: .engines) ?? [],
+                  voices: try c.decodeIfPresent(LanguageVoices.self, forKey: .voices) ?? .none)
+    }
+
+    /// The engine to install for a language that is not ready: the recommended one, else the smallest download.
+    var engineToInstall: LanguageEngine? {
+        if let recommended, let e = engines.first(where: { $0.id == recommended }) { return e }
+        return engines.min { ($0.downloadGb ?? .infinity) < ($1.downloadGb ?? .infinity) }
+    }
+
+    /// "Needs Voxtral TTS 4B (2.5 GB, non-commercial)"; nil when the language is ready.
+    var needText: String? {
+        guard !ready else { return nil }
+        guard let engine = engineToInstall else { return "Needs a voice engine that speaks \(name)" }
+        return "Needs \(engine.needText)"
+    }
+}
+
+struct LanguageList: Codable, Sendable { var languages: [LanguageInfo] }
+
+/// A reference voice the engine could not download while adding a language.
+struct LanguageVoiceError: Codable, Hashable, Sendable {
+    var id: String?
+    var error: String?
+}
+
+/// A voice `languages remove` kept, and why (it narrates a running job, ...).
+struct LanguageKeptVoice: Codable, Hashable, Sendable {
+    var id: String?
+    var reason: String?
+}
+
+/// The `language_done` event of `languages add` / `languages remove`.
+struct LanguageChangeResult: Hashable, Sendable {
+    var code: String
+    var enabled: Bool
+    var ready: Bool
+    /// Engine id to install before the language can be narrated.
+    var needs: String?
+    var voiceErrors: [LanguageVoiceError] = []
+    var voicesInstalled: Int = 0
+    var removedVoices: [String] = []
+    var keptVoices: [LanguageKeptVoice] = []
+
+    init(code: String, event: EngineEvent?, enabledDefault: Bool) {
+        self.code = code
+        enabled = event?.enabled ?? enabledDefault
+        ready = event?.ready ?? true
+        needs = event?.needs
+        voiceErrors = event?.voiceErrors ?? []
+        voicesInstalled = event?.voicesInstalled ?? 0
+        removedVoices = event?.removedVoices ?? []
+        keptVoices = event?.keptVoices ?? []
+    }
+}
+
+/// The 13 languages the app knows, for names before (or without) the engine's own list.
+enum LanguageRegistry {
+    struct Entry: Hashable, Sendable { var name: String; var native: String; var rtl: Bool }
+
+    /// Registry order. English and French are on by default.
+    static let codes = ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"]
+    static let defaultEnabled = ["en", "fr"]
+
+    static let builtin: [String: Entry] = [
+        "en": Entry(name: "English", native: "English", rtl: false),
+        "fr": Entry(name: "French", native: "Français", rtl: false),
+        "es": Entry(name: "Spanish", native: "Español", rtl: false),
+        "de": Entry(name: "German", native: "Deutsch", rtl: false),
+        "it": Entry(name: "Italian", native: "Italiano", rtl: false),
+        "pt": Entry(name: "Portuguese", native: "Português", rtl: false),
+        "ru": Entry(name: "Russian", native: "Русский", rtl: false),
+        "zh": Entry(name: "Chinese", native: "中文", rtl: false),
+        "ja": Entry(name: "Japanese", native: "日本語", rtl: false),
+        "ko": Entry(name: "Korean", native: "한국어", rtl: false),
+        "hi": Entry(name: "Hindi", native: "हिन्दी", rtl: false),
+        "ar": Entry(name: "Arabic", native: "العربية", rtl: true),
+        "nl": Entry(name: "Dutch", native: "Nederlands", rtl: false),
+    ]
+
+    /// Names the engine reported (English name by code); consulted by `Formatters.languageName`.
+    private static let reported = NameStore()
+
+    static func setReported(_ names: [String: String]) { reported.set(names) }
+    static func reportedName(_ code: String) -> String? { reported.get(code) }
+
+    private final class NameStore: @unchecked Sendable {
+        private var names: [String: String] = [:]
+        private let lock = NSLock()
+        func set(_ new: [String: String]) { lock.lock(); names = new; lock.unlock() }
+        func get(_ code: String) -> String? { lock.lock(); defer { lock.unlock() }; return names[code] }
+    }
+}
+
 // MARK: - events
 
 /// A planned section in `job_start.sections` (index -1 is the spoken "Title. By Author." intro).
@@ -333,6 +532,17 @@ struct EngineEvent: Codable, Hashable, Sendable {
     var installed: Bool?
     // cache clear
     var freedBytes: Int64?
+    // languages add / remove (`language_voice`, `language_done`)
+    var code: String?
+    var id: String?
+    var name: String?
+    var enabled: Bool?
+    var ready: Bool?
+    var needs: String?
+    var voicesInstalled: Int?
+    var voiceErrors: [LanguageVoiceError]?
+    var removedVoices: [String]?
+    var keptVoices: [LanguageKeptVoice]?
 
     /// done, error and cancelled end a run.
     var isTerminal: Bool { event.map(EventTailer.terminal.contains) ?? false }

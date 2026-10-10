@@ -106,13 +106,13 @@ enum Formatters {
 
     // MARK: Words
 
-    /// "English", "French", or the code itself.
+    /// The English name of a language: the engine's own (`languages list`), else the built-in registry,
+    /// else the system's name for the code, else the code itself.
     static func languageName(_ code: String) -> String {
-        switch code.lowercased() {
-        case "en": return "English"
-        case "fr": return "French"
-        default: return Locale(identifier: "en_US").localizedString(forLanguageCode: code) ?? code
-        }
+        let lower = code.lowercased()
+        if let name = LanguageRegistry.reportedName(lower) { return name }
+        if let name = LanguageRegistry.builtin[lower]?.name { return name }
+        return Locale(identifier: "en_US").localizedString(forLanguageCode: code) ?? code
     }
 
     /// How the engine found the book's language: "from metadata", "detected", "default".

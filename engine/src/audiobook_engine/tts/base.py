@@ -19,6 +19,10 @@ class Voice:
     gender: str = ""     # "female" / "male" / ""
     accent: str = ""     # "American", "British", ...
     note: str = ""
+    also: tuple[str, ...] = ()   # other languages this voice can speak, with an accent (Qwen3 speakers)
+
+    def speaks(self, lang: str) -> bool:
+        return lang == self.lang or lang in self.also
 
 
 @dataclass(frozen=True)
@@ -98,7 +102,13 @@ class EngineError(Exception):
     pass
 
 
-_LANG_NAMES = {"en": "English", "fr": "French"}
+def _lang_name(lang: str) -> str:
+    from .. import languages
+
+    try:
+        return languages.get(lang).name
+    except KeyError:
+        return f"'{lang}'"
 
 
 def default_preset(spec: EngineSpec, lang: str) -> str:
@@ -112,7 +122,7 @@ def default_preset(spec: EngineSpec, lang: str) -> str:
     for v in spec.voices:
         if v.lang == lang:
             return v.id
-    name = _LANG_NAMES.get(lang, f"'{lang}'")
+    name = _lang_name(lang)
     clone = f" or clone a {name} voice with --ref-voice or --ref" if spec.supports_cloning else ""
     raise EngineError(f"{spec.name} has no {name} preset voice. Choose a voice with --voice "
                       f"({', '.join(v.id for v in spec.voices)}){clone}.")

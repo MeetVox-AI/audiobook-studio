@@ -123,3 +123,17 @@ def save_rate(engine_id: str, voice_label: str, chars: int, wall: float, audio_s
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2))
     tmp.replace(p)
+
+
+def seconds_per_char(lang: str | None = None) -> float:
+    """Expected audio seconds per source character for `lang` (registry value; 0.065 for en/fr and unknown)."""
+    from . import languages
+
+    try:
+        return languages.get(lang).sec_per_char if lang else 0.065
+    except KeyError:
+        return 0.065
+
+
+def estimate_audio_seconds(chars: int, lang: str | None = None, speed: float = 1.0) -> float:
+    return chars * seconds_per_char(lang) / max(speed, 0.1)

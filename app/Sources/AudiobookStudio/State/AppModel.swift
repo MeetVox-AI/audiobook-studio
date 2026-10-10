@@ -14,7 +14,7 @@ enum SidebarItem: Hashable, Sendable {
 
 /// Engine data the app loads with one-shot commands (each has its own loading flag and error).
 enum EngineResource: String, Hashable, Sendable, CaseIterable {
-    case engines, models, voices, jobs, cache
+    case engines, models, voices, jobs, cache, languages
 }
 
 /// Progress of a `models download <engine>` (the engine reports parts, not bytes).
@@ -33,6 +33,19 @@ struct ModelDownload: Hashable, Sendable {
         let what = currentPurpose ?? currentRepo ?? "model files"
         if totalParts > 1 { return "Downloading \(what), part \(min(finishedParts + 1, totalParts)) of \(totalParts)…" }
         return "Downloading \(what)…"
+    }
+}
+
+/// Progress of a `languages add <code>` (the engine reports the voice it is fetching).
+struct LanguageDownload: Hashable, Sendable {
+    var code: String
+    var voicesStarted = 0
+    var currentVoiceName: String?
+
+    /// "Downloading the voice Lucía…" or "Preparing Spanish…".
+    var statusText: String {
+        if let name = currentVoiceName { return "Downloading the voice \(name)…" }
+        return "Preparing \(Formatters.languageName(code))…"
     }
 }
 
@@ -56,6 +69,8 @@ final class AppModel {
     let system: SystemStatus
     /// Shared player: only one sample / audiobook plays at a time.
     let player: AudioPlayback
+    /// First-run setup: engine install, model and voice downloads.
+    let setup = SetupFlow()
 
     // MARK: Navigation
 
@@ -71,6 +86,17 @@ final class AppModel {
     /// `jobs list`, newest first, plus jobs the app just started that the engine does not list yet.
     private(set) var jobs: [JobStatus] = []
     private(set) var cacheInfo: CacheInfo?
+    /// `languages list`: the 13 registry languages, which are on, and what each needs. Empty until loaded
+    /// (then English and French count as the enabled ones).
+    private(set) var languageList: [LanguageInfo] = []
+    /// `languages add` in progress, by language code (at most one at a time).
+    private(set) var languageDownloads: [String: LanguageDownload] = [:]
+    /// Language codes with a `languages remove` in progress.
+    private(set) var languageRemovals: Set<String> = []
+    /// The last failure of adding / removing a language, by code (cleared by the next attempt).
+    private(set) var languageErrors: [String: EngineError] = [:]
+    /// The outcome of the last add / remove of each language (voices that failed or were kept).
+    private(set) var languageResults: [String: LanguageChangeResult] = [:]
     private(set) var loading: Set<EngineResource> = []
     private(set) var errors: [EngineResource: EngineError] = [:]
 
@@ -119,6 +145,7 @@ final class AppModel {
     @ObservationIgnored private var monitorOrder: [String] = []
     /// The task reading each `models download` (cancelling it stops the engine process).
     @ObservationIgnored private var modelDownloadTasks: [String: Task<Void, Error>] = [:]
+    @ObservationIgnored private var languageTasks: [String: Task<EngineEvent?, Error>] = [:]
     @ObservationIgnored private var inspectToken = UUID()
     @ObservationIgnored private var didLaunch = false
 
@@ -130,6 +157,7 @@ final class AppModel {
         self.scratchDirectory = scratchDirectory ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("AudiobookStudio", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        setup.model = self
     }
 
     /// A client for the engine path currently in Settings.
@@ -146,6 +174,23 @@ final class AppModel {
         if settings.notificationsEnabled { Notifications.requestAuthorization() }
         await refreshAll()
         reattachRunningJobs()
+        openSetupIfNeeded()
+    }
+
+    /// True when the engine cannot be reached because it is not installed.
+    var engineMissing: Bool { errors[.engines]?.engineMissing ?? false }
+
+    /// The engine works but no voice model is on disk yet.
+    var hasNoModels: Bool { engineList != nil && !models.contains { $0.installed } }
+
+    /// Something is left to set up: the engine, or the first voice model.
+    var needsSetup: Bool { engineMissing || hasNoModels }
+
+    /// First launch: opens the setup when the engine or the models are missing. Someone whose engine already
+    /// works (an update, a development build) never sees it.
+    private func openSetupIfNeeded() {
+        guard settings.setupState == .notStarted else { return }
+        if needsSetup { setup.present() } else if errors[.engines] == nil { settings.setupState = .completed }
     }
 
     /// Reloads engines, models, voices, jobs and cache info concurrently (call after changing the engine path).
@@ -155,12 +200,20 @@ final class AppModel {
         async let v: Void = refreshVoices()
         async let j: Void = refreshJobs()
         async let c: Void = refreshCache()
-        _ = await (e, m, v, j, c)
+        async let l: Void = refreshLanguages()
+        _ = await (e, m, v, j, c, l)
     }
 
     func refreshEngines() async {
         guard let list = await load(.engines, ["engines"], as: EngineList.self) else { return }
         engineList = list
+        ensureVoiceSelection()
+    }
+
+    func refreshLanguages() async {
+        guard let list = await load(.languages, ["languages", "list"], as: LanguageList.self) else { return }
+        languageList = list.languages
+        LanguageRegistry.setReported(Dictionary(list.languages.map { ($0.code, $0.name) }, uniquingKeysWith: { a, _ in a }))
         ensureVoiceSelection()
     }
 
@@ -199,12 +252,16 @@ final class AppModel {
     /// Fills engine data without running the engine: for SwiftUI previews and tests
     /// (e.g. decode the JSON fixtures and pass them here). nil leaves a value unchanged.
     func preload(engines: EngineList? = nil, models: [ModelStatus]? = nil, voices: [VoiceEntry]? = nil,
-                 jobs: [JobStatus]? = nil, cache: CacheInfo? = nil) {
+                 jobs: [JobStatus]? = nil, cache: CacheInfo? = nil, languages: [LanguageInfo]? = nil) {
         if let engines { engineList = engines }
         if let models { self.models = models }
         if let voices { self.voices = voices }
         if let jobs { self.jobs = jobs }
         if let cache { cacheInfo = cache }
+        if let languages {
+            languageList = languages
+            LanguageRegistry.setReported(Dictionary(languages.map { ($0.code, $0.name) }, uniquingKeysWith: { a, _ in a }))
+        }
         ensureVoiceSelection()
     }
 
@@ -352,7 +409,7 @@ final class AppModel {
 
     /// Keeps `voiceSelection` valid for the book language once engines / voices are known.
     private func ensureVoiceSelection() {
-        let language = draft?.language ?? "en"
+        let language = draft?.language ?? fallbackLanguage
         if let v = voiceSelection, engineList == nil || v.fits(language: language, engines: engines, voices: voices) { return }
         if let suggestion = defaultVoice(for: language) { voiceSelection = suggestion }
     }
@@ -401,6 +458,7 @@ final class AppModel {
     func stopScreenEngineWork() {
         for run in samples + benchmarks where run.isRunning { run.cancel() }
         for task in modelDownloadTasks.values { task.cancel() }
+        for task in languageTasks.values { task.cancel() }
     }
 
     /// Keeps running runs and the newest finished ones.
@@ -621,6 +679,7 @@ final class AppModel {
         }
         await refreshModels()
         await refreshEngines()
+        await refreshLanguages()
     }
 
     /// Deletes an engine's model files (`models remove`). Throws EngineError.
@@ -631,6 +690,102 @@ final class AppModel {
             throw EngineError(error)
         }
         await refreshModels()
+        await refreshLanguages()
+    }
+
+    // MARK: - Languages
+
+    /// True while a language is being added or removed (the engine changes its settings one at a time).
+    var isChangingLanguage: Bool { !languageDownloads.isEmpty || !languageRemovals.isEmpty }
+
+    /// Forgets the last failure and outcome shown for a language (the dismiss button of a message).
+    func clearLanguageMessages(_ code: String) {
+        languageErrors[code] = nil
+        languageResults[code] = nil
+    }
+
+    /// Turns a language on and downloads its small reference voices (`languages add`), with progress in
+    /// `languageDownloads[code]`. Model files are never downloaded here: a language that no installed engine
+    /// can speak yet reports `needs` (the engine to install in Models). Returns nil when this language is
+    /// already being changed. Throws EngineError (also kept in `languageErrors[code]`), e.g. when another
+    /// language is being changed.
+    @discardableResult
+    func addLanguage(_ code: String) async throws -> LanguageChangeResult? {
+        if languageDownloads[code] != nil || languageRemovals.contains(code) { return nil }
+        guard !isChangingLanguage else {
+            throw EngineError(message: "Another language is being changed. Wait for it to finish.")
+        }
+        languageErrors[code] = nil
+        languageResults[code] = nil
+        languageDownloads[code] = LanguageDownload(code: code)
+        defer { languageDownloads[code] = nil }
+        let client = self.client
+        // Read in a task of its own so that quitting the app can stop it (`stopScreenEngineWork`).
+        let task = Task<EngineEvent?, Error> { [weak self] in
+            var done: EngineEvent?
+            for try await ev in client.stream(["languages", "add", code]) {
+                switch ev.event {
+                case "language_voice":
+                    self?.languageDownloads[code]?.currentVoiceName = ev.name ?? ev.id
+                    self?.languageDownloads[code]?.voicesStarted += 1
+                case "language_done":
+                    done = ev
+                default:
+                    break
+                }
+            }
+            return done
+        }
+        languageTasks[code] = task
+        defer { languageTasks[code] = nil }
+        let done: EngineEvent?
+        do {
+            done = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+        } catch {
+            await refreshLanguages()
+            await refreshVoices()
+            let failure = EngineError(error)
+            languageErrors[code] = failure
+            throw failure
+        }
+        let result = LanguageChangeResult(code: code, event: done, enabledDefault: true)
+        languageResults[code] = result
+        await refreshLanguages()
+        await refreshVoices()
+        return result
+    }
+
+    /// Turns a language off and deletes the reference voices downloaded for it (`languages remove`). Voices
+    /// that still narrate a running job are kept and reported in the result, not as an error. The shared
+    /// model files stay. Throws EngineError, e.g. "At least one language must stay on." (also kept in
+    /// `languageErrors[code]`). Returns nil when this language is already being changed.
+    @discardableResult
+    func removeLanguage(_ code: String) async throws -> LanguageChangeResult? {
+        if languageDownloads[code] != nil || languageRemovals.contains(code) { return nil }
+        guard !isChangingLanguage else {
+            throw EngineError(message: "Another language is being changed. Wait for it to finish.")
+        }
+        languageErrors[code] = nil
+        languageResults[code] = nil
+        languageRemovals.insert(code)
+        defer { languageRemovals.remove(code) }
+        let files = Dictionary(uniqueKeysWithValues: voices.compactMap { v in v.path.map { (v.id, URL(fileURLWithPath: $0)) } })
+        let done: EngineEvent
+        do {
+            done = try await client.json(["languages", "remove", code], as: EngineEvent.self)
+        } catch {
+            let failure = EngineError(error)
+            languageErrors[code] = failure
+            throw failure
+        }
+        let result = LanguageChangeResult(code: code, event: done, enabledDefault: false)
+        languageResults[code] = result
+        await refreshLanguages()
+        await refreshVoices()
+        for id in result.removedVoices { forgetVoice(id, file: files[id]) }
+        if case .only(code) = voiceLab.filter.language { voiceLab.filter.language = .book }
+        ensureVoiceSelection()
+        return result
     }
 
     // MARK: - Voices
@@ -667,6 +822,7 @@ final class AppModel {
         }
         await refreshVoices()
         forgetVoice(id, file: removedFile)
+        await refreshLanguages()
     }
 
     /// Clears every reference to a deleted voice: playback of its clip, saved per-language defaults,
@@ -699,6 +855,7 @@ final class AppModel {
             throw EngineError(error)
         }
         await refreshVoices()
+        await refreshLanguages()
         return entry
     }
 

@@ -88,7 +88,10 @@ struct VoiceSelection: Codable, Hashable, Sendable {
     func fits(language: String, engines: [EngineInfo], voices: [VoiceEntry]) -> Bool {
         guard let engine = engines.first(where: { $0.id == engineId }), engine.languages.contains(language) else { return false }
         guard let voiceLang = self.language(engines: engines, voices: voices) else { return voiceId == nil }
-        return voiceLang == language
+        if voiceLang == language { return true }
+        // A preset the engine says can speak the language with an accent.
+        if let presetId, engine.voices.first(where: { $0.id == presetId })?.speaksWithAccent(language) == true { return true }
+        return false
     }
 
     /// "Ryan · Qwen3-TTS 1.7B", "SIWIS — studio narrator (F) · Qwen3-TTS 1.7B (cloned)".
