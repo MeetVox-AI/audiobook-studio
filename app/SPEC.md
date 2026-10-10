@@ -1,6 +1,6 @@
 # Audiobook Studio — macOS app specification (v1)
 
-Native SwiftUI app (macOS 15+, Swift 6, Swift Package at `/Users/me/Code/audiobook/app`).
+Native SwiftUI app (macOS 26+, Liquid Glass, Swift 6, Swift Package at `/Users/me/Code/audiobook/app`).
 It is a thin front end over the local Python engine CLI `audiobook-engine` (path from Info.plist key
 `AudiobookEnginePath`, overridable in Settings; default for `swift run`:
 `/Users/me/Code/audiobook/engine/.venv/bin/audiobook-engine`).

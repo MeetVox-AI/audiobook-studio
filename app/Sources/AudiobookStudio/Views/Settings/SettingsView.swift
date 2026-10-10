@@ -6,17 +6,73 @@ import SwiftUI
 /// keep-work option. Every change is saved at once (AppSettings writes UserDefaults on every change).
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @State private var section: SettingsSection = .general
+
+    // The sections are switched with a segmented control rather than toolbar tabs: macOS draws the selected
+    // toolbar tab's label in the accent colour, unreadable indigo in dark mode, and SwiftUI's tint does not
+    // reach it. (TabView's .grouped style avoids that but drew its tab bar squashed on macOS 26.)
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Settings section", selection: $section) {
+                ForEach(SettingsSection.allCases) { section in
+                    Text(section.title).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .padding(.top, Theme.Space.m)
+            .padding(.bottom, Theme.Space.xs)
+            .accessibilityLabel("Settings section")
+            switch section {
+            case .general: GeneralSettingsTab()
+            case .voices: VoiceSettingsTab()
+            case .storage: StorageSettingsTab()
+            }
+        }
+        .frame(width: 680, height: 620)
+        .navigationTitle(section.title)
+    }
+}
+
+/// The sections of the Settings window.
+private enum SettingsSection: String, CaseIterable, Identifiable {
+    case general, voices, storage
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: return "General"
+        case .voices: return "Voices"
+        case .storage: return "Storage"
+        }
+    }
+}
+
+/// The look shared by every settings tab: a grouped form (the macOS settings look), capsule buttons and
+/// switches.
+private struct SettingsFormStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .formStyle(.grouped)
+            .buttonBorderShape(.capsule)
+            .toggleStyle(.switch)
+    }
+}
+
+/// A green confirmation line under a control ("The engine works: …", "Freed 335.1 MB.").
+private struct SettingsSuccessLabel: View {
+    let text: String
 
     var body: some View {
-        TabView {
-            GeneralSettingsTab()
-                .tabItem { Label("General", systemImage: "gearshape") }
-            VoiceSettingsTab()
-                .tabItem { Label("Voices", systemImage: "person.wave.2") }
-            StorageSettingsTab()
-                .tabItem { Label("Storage", systemImage: "internaldrive") }
+        Label {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "checkmark.circle.fill")
+                .symbolRenderingMode(.hierarchical)
         }
-        .frame(width: 600, height: 540)
+        .foregroundStyle(Theme.success)
     }
 }
 
@@ -31,15 +87,26 @@ private struct GeneralSettingsTab: View {
             EngineLocationSection()
 
             Section {
-                LabeledContent("Save audiobooks") {
-                    Text(settings.outputFolderURL.map { $0.path(percentEncoded: false) } ?? "Next to the book")
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .help(settings.outputFolder ?? "In the same folder as the EPUB or PDF")
+                // Label on its own line with the folder underneath, both left-aligned (a LabeledContent value
+                // this long wrapped onto a second line and sat indented).
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("Save audiobooks")
+                    HStack(spacing: 6) {
+                        Image(systemName: settings.outputFolderURL == nil ? "book.closed" : "folder")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text(settings.outputFolderURL.map { $0.path(percentEncoded: false) } ?? "Next to the book")
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .help(settings.outputFolder ?? "In the same folder as the EPUB or PDF")
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
-                HStack {
+                HStack(spacing: Theme.Space.s) {
                     Button("Choose Folder…") { chooseOutputFolder() }
                         .accessibilityLabel("Choose the folder for finished audiobooks")
                     Button("Next to the Book") { settings.outputFolder = nil }
@@ -58,6 +125,7 @@ private struct GeneralSettingsTab: View {
             } footer: {
                 Text("\(OpsAudioQuality.caption(kbps: settings.bitrateKbps)) 64 kbps is plenty for a single narrator.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
@@ -72,10 +140,11 @@ private struct GeneralSettingsTab: View {
                 if !Notifications.isAvailable {
                     Text("Notifications appear only when Audiobook Studio runs as an installed app, not from a development build.")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .formStyle(.grouped)
+        .modifier(SettingsFormStyle())
     }
 
     private func chooseOutputFolder() {
@@ -101,15 +170,25 @@ private struct EngineLocationSection: View {
     @State private var testedPath: String?
     @State private var success: String?
     @State private var failure: EngineError?
+    @FocusState private var isPathFocused: Bool
 
     var body: some View {
         Section {
             TextField("Location", text: $pathDraft, prompt: Text(EngineClient.defaultPath))
                 .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.leading)
+                .labelsHidden()
+                .focused($isPathFocused)
+                .task {
+                    // The window gives its first text field keyboard focus (whole path selected) when Settings
+                    // opens; drop that, so the field is only edited when clicked.
+                    await Task.yield()
+                    isPathFocused = false
+                }
                 .onSubmit { test() }
                 .accessibilityLabel("Engine location")
                 .help("The audiobook-engine program")
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 Button("Choose…") { chooseEngine() }
                     .accessibilityLabel("Choose the engine program")
                 Button("Test") { test() }
@@ -130,9 +209,7 @@ private struct EngineLocationSection: View {
                 Spacer()
             }
             if let success {
-                Label(success, systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsSuccessLabel(text: success)
             }
             if let failure {
                 OpsErrorBox(error: failure) { self.failure = nil }
@@ -150,6 +227,7 @@ private struct EngineLocationSection: View {
         } footer: {
             Text(footer)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { pathDraft = model.settings.enginePath }
     }
@@ -216,14 +294,21 @@ private struct VoiceSettingsTab: View {
                     DefaultVoicePicker(language: language)
                 }
                 if model.engines.isEmpty {
-                    Text("Voices appear once the engine is reachable.")
-                        .foregroundStyle(.secondary)
+                    Label {
+                        Text("Voices appear once the engine is reachable.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Default narrator")
             } footer: {
                 Text("Used when you open a book in that language. “Automatic” picks an installed engine that allows commercial use first.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
@@ -238,9 +323,10 @@ private struct VoiceSettingsTab: View {
             } footer: {
                 Text("Saved for a future version: the engine does not use these pauses yet.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
+        .modifier(SettingsFormStyle())
     }
 
     private var pauseOptions: some View {
@@ -260,7 +346,7 @@ private struct DefaultVoicePicker: View {
         let choices = model.opsNarratorChoices(language: language)
         let saved = model.settings.defaultVoices[language]
         let savedKey = saved.map(OpsNarratorChoice.key)
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
             Picker(Formatters.languageName(language), selection: binding(choices: choices)) {
                 Text(automaticTitle).tag("")
                 if !choices.isEmpty { Divider() }
@@ -277,6 +363,7 @@ private struct DefaultVoicePicker: View {
                 Text(details(saved))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -319,7 +406,7 @@ private struct StorageSettingsTab: View {
         Form {
             Section {
                 cacheFigures
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Space.s) {
                     Button("Free Space…") {
                         freedMessage = nil
                         error = nil
@@ -342,12 +429,17 @@ private struct StorageSettingsTab: View {
                     Spacer()
                 }
                 if model.activeJobCount > 0 {
-                    Text("A conversion is running; free space after it finishes.")
-                        .foregroundStyle(.secondary)
+                    Label {
+                        Text("A conversion is running; free space after it finishes.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "hourglass")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .foregroundStyle(.secondary)
                 }
                 if let freedMessage {
-                    Label(freedMessage, systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    SettingsSuccessLabel(text: freedMessage)
                 }
                 if let error {
                     OpsErrorBox(error: error) { self.error = nil }
@@ -357,6 +449,7 @@ private struct StorageSettingsTab: View {
             } footer: {
                 Text("Cached audio lets a stopped conversion resume without narrating again. Finished audiobooks are never deleted.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
@@ -367,9 +460,10 @@ private struct StorageSettingsTab: View {
             } footer: {
                 Text("Off by default: chapter files are deleted once the audiobook is made, to save disk space. Turn on only for troubleshooting.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
+        .modifier(SettingsFormStyle())
         .task { await model.refreshCache() }
         .confirmationDialog("Free disk space?", isPresented: $confirmFree, titleVisibility: .visible) {
             if let info = model.cacheInfo {
@@ -390,12 +484,20 @@ private struct StorageSettingsTab: View {
     @ViewBuilder
     private var cacheFigures: some View {
         if let info = model.cacheInfo {
-            LabeledContent("Cached audio", value: Formatters.bytes(info.chunksBytes))
-            LabeledContent("Job folders", value: Formatters.bytes(info.jobsBytes))
-            LabeledContent("Total", value: Formatters.bytes(info.totalBytes))
-            LabeledContent("Location") {
+            StatGrid(minWidth: 150) {
+                StatTile(label: "Cached audio", value: Formatters.bytes(info.chunksBytes),
+                         systemImage: "waveform", tint: Theme.accent)
+                StatTile(label: "Job folders", value: Formatters.bytes(info.jobsBytes),
+                         systemImage: "folder", tint: Theme.highlight)
+                StatTile(label: "Total", value: Formatters.bytes(info.totalBytes),
+                         systemImage: "internaldrive", tint: Theme.accent)
+            }
+            .padding(.vertical, Theme.Space.xs)
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                Text("Location")
                 HStack(spacing: 6) {
                     Text(info.path)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
@@ -410,6 +512,7 @@ private struct StorageSettingsTab: View {
                     .help("Show in Finder")
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else if let error = model.errors[.cache] {
             OpsErrorBox(error: error)
         } else if model.loading.contains(.cache) {

@@ -2,7 +2,7 @@ import SwiftUI
 
 // Small building blocks shared by the Voices screen views.
 
-/// Section heading with an optional one-line explanation.
+/// Section heading with an optional one-line explanation (the design system's section header).
 struct VoiceSectionTitle: View {
     let title: String
     let subtitle: String?
@@ -13,20 +13,11 @@ struct VoiceSectionTitle: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.title2.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
-            if let subtitle {
-                Text(subtitle)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        SectionHeader(title, subtitle: subtitle)
     }
 }
 
-/// An orange caution line (problems that do not stop the user).
+/// A caution line on a soft amber tint (problems that do not stop the user).
 struct VoiceWarningLine: View {
     let text: String
     let systemImage: String
@@ -42,9 +33,13 @@ struct VoiceWarningLine: View {
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: systemImage)
-                .foregroundStyle(.orange)
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Theme.warning)
         }
         .font(.callout)
+        .padding(.horizontal, Theme.Space.m - 2)
+        .padding(.vertical, Theme.Space.s - 2)
+        .background(Theme.warning.opacity(0.11), in: .smooth(Theme.Radius.control))
         .accessibilityElement(children: .combine)
     }
 }
@@ -55,14 +50,15 @@ struct VoiceErrorNote: View {
     @State private var showDetails = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             Label {
                 Text(error.message)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Theme.danger)
             }
             .font(error.isDiskSpace ? .body.weight(.semibold) : .callout)
             .accessibilityElement(children: .combine)
@@ -73,47 +69,43 @@ struct VoiceErrorNote: View {
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Theme.Space.s)
                     }
                     .frame(maxHeight: 140)
+                    .background(Theme.surface.opacity(0.6), in: .smooth(Theme.Radius.control))
+                    .padding(.top, Theme.Space.xs)
                 }
                 .font(.callout)
                 .accessibilityLabel("Engine log details")
             }
         }
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s + 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.danger.opacity(0.09), in: .smooth(Theme.Radius.tile))
     }
 }
 
-/// Licence capsule, with a NON-COMMERCIAL badge for personal-use-only licences.
+/// Licence chip, with a NON-COMMERCIAL chip for personal-use-only licences.
 struct VoiceLicenseBadge: View {
     let license: String
     let noncommercial: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        // Wraps onto a second line when the card is narrow, rather than truncating a chip.
+        VoiceFlowLayout(spacing: Theme.Space.xs + 2) {
             if noncommercial {
-                Label("NON-COMMERCIAL", systemImage: "exclamationmark.shield.fill")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.14), in: Capsule())
-                    .overlay(Capsule().strokeBorder(Color.orange.opacity(0.6), lineWidth: 1))
+                Chip(text: "NON-COMMERCIAL", systemImage: "exclamationmark.shield.fill", tint: Theme.warning)
             }
-            Text(license)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            Chip(text: license, systemImage: "doc.text", tint: .secondary)
                 .help(license)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.quaternary.opacity(0.6), in: Capsule())
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(noncommercial ? "Licence \(license), non-commercial: personal use only" : "Licence \(license)")
     }
 }
 
-/// Play / Stop for a sample through the shared player.
+/// Play / Stop for a sample through the shared player, as a prominent capsule ("Play", "Play A").
 struct VoicePlayButton: View {
     @Environment(AppModel.self) private var model
     let url: URL
@@ -126,9 +118,14 @@ struct VoicePlayButton: View {
         Button {
             model.player.toggle(url)
         } label: {
-            Label(title.map { playing ? "Stop \($0)" : "Play \($0)" } ?? (playing ? "Stop" : "Play"),
-                  systemImage: playing ? "stop.fill" : "play.fill")
+            Label {
+                Text(title.map { playing ? "Stop \($0)" : "Play \($0)" } ?? (playing ? "Stop" : "Play"))
+            } icon: {
+                Image(systemName: playing ? "stop.fill" : "play.fill")
+                    .contentTransition(.symbolEffect(.replace))
+            }
         }
+        .voiceCapsuleButton(prominent: true)
         .accessibilityLabel(playing ? "Stop \(name)" : "Play \(name)")
     }
 }
@@ -142,10 +139,10 @@ struct VoiceSampleStatus: View {
     var playTitle: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
             switch run.phase {
             case .finished:
-                HStack(spacing: 12) {
+                HStack(spacing: Theme.Space.m) {
                     if let url = run.previewAudioURL {
                         VoicePlayButton(url: url, name: name, title: playTitle)
                     }
@@ -157,11 +154,11 @@ struct VoiceSampleStatus: View {
             case .failed:
                 if let error = run.error { VoiceErrorNote(error: error) }
             case .cancelled:
-                Text("Stopped.")
+                Label("Stopped.", systemImage: "stop.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             case .starting, .waiting, .loadingModel, .working:
-                HStack(spacing: 10) {
+                HStack(spacing: Theme.Space.m) {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityHidden(true)
@@ -170,6 +167,7 @@ struct VoiceSampleStatus: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("Stop") { run.cancel() }
+                        .voiceCapsuleButton()
                         .controlSize(.small)
                         .accessibilityLabel("Stop making \(name)")
                 }
@@ -210,16 +208,15 @@ struct VoiceNoBookPrompt: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "book.closed")
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
+        HStack(spacing: Theme.Space.m) {
+            IconBadge(systemImage: "book.closed", tint: .secondary, size: 36)
             Text("Open a book to hear voices reading it.")
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 8)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Theme.Space.s)
             Button("Open a Book…") { model.openWithPanel() }
+                .voiceCapsuleButton()
                 .accessibilityLabel("Open a book")
         }
-        .padding(8)
     }
 }

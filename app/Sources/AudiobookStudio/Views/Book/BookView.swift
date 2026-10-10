@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// "New audiobook" screen (sidebar `.newBook`).
@@ -36,20 +37,17 @@ private struct BookDraftScreen: View {
     @State private var dismissedBookErrorID: UUID?
     /// Section for "Make a 2-minute sample" (nil: the engine picks the first chapter).
     @State private var sampleSection: Int?
+    /// The cover, loaded once for the header and the blurred hero backdrop behind it.
+    @State private var coverImage: NSImage?
     /// The latest 2-minute sample started here, kept per window so it survives switching screens.
     @SceneStorage("BookView.sampleRunID") private var sampleRunID = ""
     @SceneStorage("BookView.sampleBookPath") private var sampleBookPath = ""
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: Theme.Space.xl) {
                 if model.isInspecting {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Reading the new book…")
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Reading the new book")
+                    inspectingPill
                 }
                 if let error = model.bookError, error.id != dismissedBookErrorID {
                     BookErrorView(error: error) { dismissedBookErrorID = error.id }
@@ -57,7 +55,7 @@ private struct BookDraftScreen: View {
                 if let job = activeJobForBook {
                     activeJobBanner(job)
                 }
-                BookHeaderView(draft: draft)
+                BookHeaderView(draft: draft, cover: coverImage)
                 BookNarratorPanel(draft: draft)
                 BookSamplePanel(draft: draft, run: currentSample, section: $sampleSection,
                                 blocker: model.bookBlocker(voice: model.voiceSelection, forConversion: false),
@@ -67,10 +65,18 @@ private struct BookDraftScreen: View {
                     perform(.sample(section: index))
                 }
             }
-            .padding(24)
-            .frame(maxWidth: 960, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Theme.Space.xxl)
+            .padding(.vertical, Theme.Space.xl)
+            .screenWidth()
+            .background(alignment: .top) {
+                // The blurred cover behind the hero header, spanning the whole width and reaching up under
+                // the toolbar so the glow has no hard top edge; it scrolls with the content.
+                HeroBackdrop(image: coverImage)
+                    .frame(height: 560)
+                    .offset(y: -160)
+            }
         }
+        .background(AmbientBackground())
         .safeAreaInset(edge: .bottom, spacing: 0) {
             BookTotalsBar(draft: draft,
                           blocker: model.bookBlocker(voice: model.voiceSelection, forConversion: true),
@@ -79,6 +85,7 @@ private struct BookDraftScreen: View {
                           onDismissError: { convertError = nil },
                           onConvert: { perform(.convert) })
         }
+        .task(id: draft.coverURL) { coverImage = await BookCoverView.load(draft.coverURL) }
         .navigationSubtitle(draft.title)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -131,18 +138,32 @@ private struct BookDraftScreen: View {
         model.jobs.first { $0.book == draft.url.path && model.liveState(of: $0).isActive }
     }
 
-    private func activeJobBanner(_ job: JobStatus) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "waveform")
-                .foregroundStyle(Color.accentColor)
-                .accessibilityHidden(true)
-            Text("This book is being converted.")
-            Spacer()
-            Button("Show Progress") { model.selection = .job(job.jobId) }
-                .accessibilityLabel("Show the conversion progress")
+    /// "Reading the new book…" while another book is being opened over this one.
+    private var inspectingPill: some View {
+        HStack(spacing: Theme.Space.s) {
+            ProgressView().controlSize(.small)
+            Text("Reading the new book…")
+                .font(.callout)
         }
-        .padding(10)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, Theme.Space.m)
+        .padding(.vertical, Theme.Space.s)
+        .background(Theme.surface, in: Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Reading the new book")
+    }
+
+    private func activeJobBanner(_ job: JobStatus) -> some View {
+        InlineBanner(systemImage: "waveform", tint: Theme.accent) {
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                Text("This book is being converted.")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Show Progress") { model.selection = .job(job.jobId) }
+                    .bookCardButton()
+                    .controlSize(.small)
+                    .accessibilityLabel("Show the conversion progress")
+            }
+        }
     }
 
     private var slowWarningShown: Binding<Bool> {
@@ -152,7 +173,8 @@ private struct BookDraftScreen: View {
     // MARK: Actions
 
     /// Runs the licence check (and, for Convert, the slow-engine check) before the action itself.
-    /// Does nothing while something blocks the action (its reason is shown next to the button).
+    /// Does nothing while something blocks the action (its reason is shown above the Convert bar and in the
+    /// sample button's help).
     private func perform(_ action: BookPendingAction) {
         let voice = model.voiceSelection
         guard model.bookBlocker(voice: voice, forConversion: action == .convert) == nil else { return }

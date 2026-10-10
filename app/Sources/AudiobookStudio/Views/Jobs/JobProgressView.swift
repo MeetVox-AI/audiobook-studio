@@ -1,10 +1,12 @@
 import Charts
 import SwiftUI
 
-/// Live progress of a queued or running job: big percent bar, chapter and chunk, ETA range with its
-/// basis, elapsed time, speed now against the average, and Cancel (with confirmation).
+/// Live progress of a queued or running job: a large progress ring, the ETA range with its basis, the
+/// phase and chapter, Cancel (with confirmation), then stat tiles for chunk, elapsed time, speed now
+/// against the average, real-time factor, and what the job narrates.
 struct JobProgressPanel: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let monitor: JobMonitor
     @State private var confirmCancel = false
     @State private var isCancelling = false
@@ -12,76 +14,96 @@ struct JobProgressPanel: View {
     @State private var elapsed: JobLiveElapsed?
 
     var body: some View {
-        OpsCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(Formatters.percent(monitor.percent))
-                        .font(.system(size: 44, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(isCancelling ? "Stopping…" : monitor.phase.title)
-                            .font(.title3)
-                        if let chapter = monitor.chapterText {
-                            Text(chapter)
+        SurfaceCard {
+            HStack(alignment: .center, spacing: Theme.Space.xl) {
+                progressRing
+                VStack(alignment: .leading, spacing: Theme.Space.l) {
+                    // Once narration is over (assembling, encoding) the last estimate no longer applies and
+                    // the phase line below already says what is happening, so "Time left" is left out.
+                    if monitor.etaText != nil || monitor.latestProgress == nil {
+                        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                            Label("Time left", systemImage: "hourglass")
+                                .font(.callout)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                            etaView
                         }
+                        .accessibilityElement(children: .combine)
                     }
-                    Spacer(minLength: 12)
+                    phaseLine
                     Button(role: .destructive) {
                         confirmCancel = true
                     } label: {
                         Label("Cancel Conversion…", systemImage: "stop.fill")
                     }
+                    .jobsCardButton()
                     .disabled(isCancelling)
                     .accessibilityLabel("Cancel this conversion")
                     .help("Stops the conversion. Finished chunks are kept so it can resume later.")
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-                ProgressView(value: monitor.fraction)
-                    .controlSize(.large)
-                    .accessibilityLabel("Conversion progress")
-                    .accessibilityValue("\(Formatters.percent(monitor.percent)) of the characters narrated")
-
-                if case .encoding(let percent) = monitor.phase {
-                    ProgressView(value: min(1, max(0, percent / 100))) {
-                        Text("Encoding the audiobook file")
-                            .font(.caption)
-                    }
-                    .accessibilityLabel("Encoding progress")
-                    .accessibilityValue(Formatters.percent(percent))
+            if case .encoding(let percent) = monitor.phase {
+                ProgressView(value: min(1, max(0, percent / 100))) {
+                    Text("Encoding the audiobook file")
+                        .font(.caption)
                 }
-                if case .waitingForGPU = monitor.phase {
-                    OpsNotice(text: "Another conversion, sample or benchmark is using the GPU. This one starts as soon as it is free.",
-                              systemImage: "hourglass")
-                }
+                .tint(Theme.accent)
+                .accessibilityLabel("Encoding progress")
+                .accessibilityValue(Formatters.percent(percent))
+            }
+            if case .waitingForGPU = monitor.phase {
+                OpsNotice(text: "Another conversion, sample or benchmark is using the GPU. This one starts as soon as it is free.",
+                          systemImage: "hourglass")
+            }
 
-                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
-                    if let p = monitor.latestProgress, let chunk = p.chunk, let chunks = p.chunks {
-                        figureRow("Chunk", systemImage: "square.stack.3d.up") {
-                            Text("\(Formatters.count(chunk)) of \(Formatters.count(chunks)) in this chapter")
-                                .monospacedDigit()
+            // Wide columns: up to four tiles sit in a 2 × 2 grid, and "Now 61 characters/s" stays on one line.
+            // Tiles in a row share its height, so the Chunk caption and the Speed average line do not leave
+            // the tile beside them shorter.
+            JobsTileGrid(minColumnWidth: 260) {
+                if let p = monitor.latestProgress, let chunk = p.chunk, let chunks = p.chunks {
+                    let of = "\(Formatters.count(chunk)) of \(Formatters.count(chunks))"
+                    JobsStatTile(label: "Chunk", value: of, systemImage: "square.stack.3d.up",
+                                 caption: "In this chapter", accessibilityText: "Chunk: \(of) in this chapter")
+                }
+                elapsedTile
+                JobSpeedTile(progress: monitor.latestProgress)
+                if let progress = monitor.latestProgress, progress.rateCps != nil || progress.runRateCps != nil,
+                   let x = progress.realtimeX {
+                    JobsStatTile(label: "Real time", value: Formatters.multiplier(x), systemImage: "hare",
+                                 accessibilityText: Formatters.realtime(x))
+                }
+            }
+
+            if let plan = monitor.plan, let summary = JobText.planSummary(plan) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+                    Image(systemName: "book")
+                        .symbolRenderingMode(.hierarchical)
+                        // Drawn like a tile icon (StatTile): secondary in dark mode, where the accent is hard to read.
+                        .foregroundStyle(ReadableForeground(Theme.accent, fallback: .secondary))
+                        .font(.callout.weight(.semibold))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("This job")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text(summary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let reused = JobText.reused(plan) {
+                            Text(reused)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    figureRow("Time left", systemImage: "hourglass") { etaView }
-                    figureRow("Elapsed", systemImage: "timer") { elapsedView }
-                    figureRow("Speed", systemImage: "speedometer") { speedView }
-                    if let plan = monitor.plan, let summary = JobText.planSummary(plan) {
-                        figureRow("This job", systemImage: "book") {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(summary)
-                                if let reused = JobText.reused(plan) {
-                                    Text(reused).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
                 }
+                .padding(Theme.Space.m + 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .insetSurface()
+                .accessibilityElement(children: .combine)
+            }
 
-                if let cancelError {
-                    OpsErrorBox(error: cancelError) { self.cancelError = nil }
-                }
+            if let cancelError {
+                OpsErrorBox(error: cancelError) { self.cancelError = nil }
             }
         }
         .onChange(of: reportedElapsed, initial: true) { _, value in
@@ -100,26 +122,60 @@ struct JobProgressPanel: View {
         }
     }
 
-    // MARK: Figures
+    // MARK: Hero
 
-    private func figureRow<V: View>(_ label: String, systemImage: String, @ViewBuilder value: () -> V) -> some View {
-        GridRow {
-            Label(label, systemImage: systemImage)
-                .foregroundStyle(.secondary)
-                .gridColumnAlignment(.leading)
-            value()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
+    private var progressRing: some View {
+        ProgressRing(progress: monitor.fraction, lineWidth: 14) {
+            Text(Formatters.percent(monitor.percent))
+                .font(Theme.number(.largeTitle))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(.horizontal, Theme.Space.l + 4)
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .smooth, value: monitor.percent)
+        }
+        .frame(width: 150, height: 150)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Conversion progress")
+        .accessibilityValue("\(Formatters.percent(monitor.percent)) of the characters narrated")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// The phase ("Narrating", "Loading the voice model…") with a working symbol, and the current chapter.
+    private var phaseLine: some View {
+        let waiting: Bool = {
+            if case .waitingForGPU = monitor.phase { return true }
+            return false
+        }()
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
+            Image(systemName: waiting ? "hourglass" : "waveform")
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(Theme.accentForeground)
+                .font(.title3.weight(.semibold))
+                .symbolEffect(.variableColor.iterative, isActive: !reduceMotion && !waiting && !isCancelling)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isCancelling ? "Stopping…" : monitor.phase.title)
+                    .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let chapter = monitor.chapterText {
+                    Text(chapter)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
         }
     }
 
     @ViewBuilder
     private var etaView: some View {
         if let eta = monitor.etaText, let progress = monitor.latestProgress {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
                 Text(eta)
-                    .font(.title3.weight(.medium))
-                    .monospacedDigit()
+                    .font(Theme.number(.title, weight: .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .smooth, value: eta)
                 if let basis = JobText.etaBasis(progress.etaBasis) {
                     Text(basis)
                         .font(.caption)
@@ -127,59 +183,24 @@ struct JobProgressPanel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-        } else if monitor.latestProgress != nil {
-            // Narration is over (assembling, encoding): the last narration estimate no longer applies.
-            Text(monitor.phase.title)
-                .foregroundStyle(.secondary)
         } else {
             Text("Appears once narration starts")
+                .font(.title3)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    // MARK: Figures
+
     @ViewBuilder
-    private var elapsedView: some View {
+    private var elapsedTile: some View {
         if let elapsed {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(Formatters.clock(elapsed.seconds(at: context.date)))
-                    .monospacedDigit()
+                JobsStatTile(label: "Elapsed", value: Formatters.clock(elapsed.seconds(at: context.date)), systemImage: "timer")
             }
         } else {
-            Text("—").foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private var speedView: some View {
-        let progress = monitor.latestProgress
-        let now = progress?.rateCps
-        let average = progress?.runRateCps
-        if now == nil && average == nil {
-            Text("Measuring…").foregroundStyle(.secondary)
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if let now {
-                        Text("Now \(Formatters.charsPerSecond(now))")
-                    }
-                    if let average {
-                        Text("· average \(Formatters.charsPerSecond(average))")
-                            .foregroundStyle(.secondary)
-                    }
-                    if let trend = JobSpeedTrend.compare(now: now, average: average), trend != .steady {
-                        Label(trend.text, systemImage: trend.systemImage)
-                            .labelStyle(.iconOnly)
-                            .foregroundStyle(.secondary)
-                            .help(trend.text.prefix(1).uppercased() + trend.text.dropFirst())
-                            .accessibilityLabel(trend.text)
-                    }
-                }
-                .monospacedDigit()
-                if let x = progress?.realtimeX {
-                    Text(Formatters.realtime(x))
-                        .foregroundStyle(.secondary)
-                }
-            }
+            JobsStatTile(label: "Elapsed", value: "—", systemImage: "timer")
         }
     }
 
@@ -203,35 +224,111 @@ struct JobProgressPanel: View {
     }
 }
 
-/// "Speed over time" line chart (characters per second now and on average).
+/// Speed now (with a faster / slower arrow against the run's average) and the average below it,
+/// drawn like a StatTile.
+private struct JobSpeedTile: View {
+    let progress: EngineEvent?
+
+    var body: some View {
+        let now = progress?.rateCps
+        let average = progress?.runRateCps
+        JobsTile(label: "Speed", systemImage: "speedometer") {
+            if now == nil && average == nil {
+                Text("Measuring…")
+                    .font(Theme.number(.title2))
+                    .foregroundStyle(.secondary)
+            } else {
+                if let now {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Now")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Text(Formatters.charsPerSecond(now))
+                            .font(Theme.number(.title2))
+                            .contentTransition(.numericText())
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let trend = JobSpeedTrend.compare(now: now, average: average), trend != .steady {
+                            Image(systemName: trend.systemImage)
+                                .font(.callout.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .help(trend.text.prefix(1).uppercased() + trend.text.dropFirst())
+                                .accessibilityLabel(trend.text)
+                        }
+                    }
+                }
+                if let average {
+                    // Its own line (the main figure when speed now is not known yet), so it starts with a capital.
+                    Text("Average \(Formatters.charsPerSecond(average))")
+                        .font(now == nil ? Theme.number(.title2) : .caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "Speed over time" chart: speed now as a line over a soft gradient area, the run's average as a
+/// dashed line.
 struct JobRateChartCard: View {
     let points: [RatePoint]
     let isLive: Bool
 
     var body: some View {
-        OpsCard(isLive ? "Speed over time" : "Speed during the conversion") {
+        SurfaceCard(isLive ? "Speed over time" : "Speed during the conversion", systemImage: "chart.xyaxis.line") {
             if points.count < 2 {
                 Text("The chart appears after a few measurements.")
                     .foregroundStyle(.secondary)
             } else {
                 let minutes = JobRateChart.usesMinutes(points)
-                Chart(JobRateChart.samples(points)) { sample in
-                    LineMark(x: .value(minutes ? "Minutes" : "Seconds", sample.x),
-                             y: .value("Characters per second", sample.charsPerSecond))
-                        .foregroundStyle(by: .value("Series", sample.series))
-                        .interpolationMethod(.monotone)
+                let samples = JobRateChart.samples(points)
+                let xName = minutes ? "Minutes" : "Seconds"
+                Chart {
+                    ForEach(samples.filter { $0.series == JobRateChart.nowSeries }) { sample in
+                        AreaMark(x: .value(xName, sample.x),
+                                 y: .value("Characters per second", sample.charsPerSecond))
+                            .interpolationMethod(.monotone)
+                            .foregroundStyle(LinearGradient(colors: [Theme.accent.opacity(0.28), Theme.accent.opacity(0)],
+                                                            startPoint: .top, endPoint: .bottom))
+                    }
+                    ForEach(samples) { sample in
+                        LineMark(x: .value(xName, sample.x),
+                                 y: .value("Characters per second", sample.charsPerSecond))
+                            .foregroundStyle(by: .value("Series", sample.series))
+                            .interpolationMethod(.monotone)
+                            .lineStyle(sample.series == JobRateChart.averageSeries ? Self.averageStroke : Self.nowStroke)
+                    }
                 }
-                .chartForegroundStyleScale([JobRateChart.nowSeries: Color.accentColor,
+                .chartForegroundStyleScale([JobRateChart.nowSeries: Theme.accent,
                                             JobRateChart.averageSeries: Color.secondary])
+                .chartXAxis {
+                    AxisMarks { _ in
+                        AxisGridLine(stroke: Self.gridStroke)
+                            .foregroundStyle(Color.secondary.opacity(0.25))
+                        AxisValueLabel()
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks { _ in
+                        AxisGridLine(stroke: Self.gridStroke)
+                            .foregroundStyle(Color.secondary.opacity(0.25))
+                        AxisValueLabel()
+                    }
+                }
                 .chartXAxisLabel(minutes ? "Minutes since the start" : "Seconds since the start")
                 .chartYAxisLabel("Characters/s")
                 .chartLegend(position: .top, alignment: .leading)
-                .frame(height: 180)
+                .frame(height: 200)
                 .accessibilityLabel("Narration speed over time")
                 .accessibilityValue(JobRateChart.accessibilitySummary(points))
             }
         }
     }
+
+    private static let nowStroke = StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+    private static let averageStroke = StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 4])
+    private static let gridStroke = StrokeStyle(lineWidth: 0.5, dash: [2, 3])
 }
 
 /// Speech check counters, re-generated chunks and the flagged chunks (expandable, with text and issue).
@@ -244,21 +341,29 @@ struct JobQualityCard: View {
         let redos = JobText.redos(monitor.qaRedos)
         let flagged = monitor.flaggedCount
         if qa != nil || redos != nil || flagged > 0 {
-            OpsCard("Quality check") {
+            SurfaceCard("Quality check", systemImage: "checkmark.shield") {
                 if let qa {
-                    Label(qa, systemImage: "waveform.badge.magnifyingglass")
-                        .accessibilityLabel("Speech check: \(qa)")
+                    QualityLine(systemImage: "waveform.badge.magnifyingglass", tint: Theme.accent) {
+                        Text(qa)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Speech check: \(qa)")
                 }
                 if let redos {
-                    Label(redos, systemImage: "arrow.triangle.2.circlepath")
-                        .fixedSize(horizontal: false, vertical: true)
+                    QualityLine(systemImage: "arrow.triangle.2.circlepath", tint: Theme.accent) {
+                        Text(redos)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
                 if flagged == 0 {
-                    Label("No flagged chunks", systemImage: "checkmark.circle")
-                        .foregroundStyle(.secondary)
+                    QualityLine(systemImage: "checkmark", tint: Theme.success) {
+                        Text("No flagged chunks")
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
                 } else {
                     DisclosureGroup(isExpanded: $showFlagged) {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: Theme.Space.s) {
                             if monitor.flaggedChunks.isEmpty {
                                 Text("The details of these chunks are not in the job’s log.")
                                     .foregroundStyle(.secondary)
@@ -267,18 +372,37 @@ struct JobQualityCard: View {
                                 FlaggedChunkRow(chunk: chunk, location: JobText.flaggedLocation(chunk, plan: monitor.plan))
                             }
                         }
-                        .padding(.top, 6)
+                        .padding(.top, Theme.Space.s)
                     } label: {
-                        Label(flagged == 1 ? "1 flagged chunk" : "\(Formatters.count(flagged)) flagged chunks",
-                              systemImage: "exclamationmark.bubble")
-                            .foregroundStyle(.orange)
+                        QualityLine(systemImage: "exclamationmark.bubble", tint: Theme.warning) {
+                            Text(flagged == 1 ? "1 flagged chunk" : "\(Formatters.count(flagged)) flagged chunks")
+                                .foregroundStyle(Theme.warning)
+                                .fontWeight(.medium)
+                        }
                     }
                     .accessibilityLabel(flagged == 1 ? "1 flagged chunk, show details" : "\(flagged) flagged chunks, show details")
                     Text("Flagged chunks may have missing or misread words. Listen to them in the finished audiobook.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+}
+
+/// A line of the quality card: a small tinted badge and its text.
+private struct QualityLine<Content: View>: View {
+    let systemImage: String
+    let tint: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            IconBadge(systemImage: systemImage, tint: tint, size: 28)
+            content
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -294,7 +418,8 @@ private struct FlaggedChunkRow: View {
             if !chunk.issues.isEmpty {
                 Text(chunk.issues.joined(separator: "; "))
                     .font(.callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !chunk.text.isEmpty {
                 Text(chunk.text)
@@ -304,9 +429,10 @@ private struct FlaggedChunkRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(8)
+        .padding(Theme.Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+        .hoverHighlight(radius: Theme.Radius.control)
+        .insetSurface(radius: Theme.Radius.control)
         .accessibilityElement(children: .combine)
     }
 }
@@ -318,24 +444,23 @@ struct JobMachineStatusCard: View {
 
     var body: some View {
         let system = model.system
-        OpsCard("This Mac") {
-            HStack(spacing: 20) {
-                Label("Temperature: \(system.thermalState.title)", systemImage: system.thermalState.systemImage)
-                    .foregroundStyle(system.thermalState.isThrottling ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
-                Label(system.powerSource.title, systemImage: system.powerSource.systemImage)
-                    .foregroundStyle(system.isOnBattery ? AnyShapeStyle(.orange) : AnyShapeStyle(.primary))
+        SurfaceCard("This Mac", systemImage: "desktopcomputer") {
+            JobsFlowLayout {
+                Chip(text: "Temperature: \(system.thermalState.title)", systemImage: system.thermalState.systemImage,
+                     tint: system.thermalState.isThrottling ? Theme.warning : .secondary)
+                Chip(text: system.powerSource.title, systemImage: system.powerSource.systemImage,
+                     tint: system.isOnBattery ? Theme.warning : .secondary)
                 if monitor.isKeepingAwake {
-                    Label("Keeping your Mac awake", systemImage: "cup.and.saucer")
+                    Chip(text: "Keeping your Mac awake", systemImage: "cup.and.saucer", tint: Theme.accent)
                         .help("Your Mac will not go to sleep on its own until the conversion ends.")
                 }
             }
-            .font(.callout)
             if let explanation = system.thermalState.explanation {
-                OpsNotice(text: explanation, systemImage: "thermometer.high", tint: .orange)
+                OpsNotice(text: explanation, systemImage: "thermometer.high", tint: Theme.warning)
             }
             if system.isOnBattery {
                 OpsNotice(text: "Your Mac is running on battery: the conversion is slower and drains the battery. Plug in the power adapter to finish sooner.",
-                          systemImage: "battery.25", tint: .orange)
+                          systemImage: "battery.25", tint: Theme.warning)
             }
             Text("The conversion keeps running if you close this window or quit Audiobook Studio; it is followed again when you reopen the app.")
                 .font(.caption)

@@ -10,12 +10,13 @@ struct VoiceBrowser: View {
     var body: some View {
         let options = model.filteredVoiceOptions
         let groups = VoiceCatalog.groups(options, engines: model.engines)
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VoiceSectionTitle("Voices", subtitle: subtitle)
-                Spacer(minLength: 12)
-                Button("Add My Voice…", action: addVoice)
-                    .accessibilityLabel("Add my voice")
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            SectionHeader("Voices", subtitle: subtitle) {
+                Button(action: addVoice) {
+                    Label("Add My Voice…", systemImage: "plus")
+                }
+                .voiceCapsuleButton()
+                .accessibilityLabel("Add my voice")
             }
 
             VoiceFilterBar()
@@ -32,29 +33,30 @@ struct VoiceBrowser: View {
             Text(countText(options.count))
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .contentTransition(.numericText())
 
             if options.isEmpty {
-                ContentUnavailableView {
-                    Label("No voices match", systemImage: "line.3.horizontal.decrease.circle")
-                } description: {
-                    Text("Change the filters to see more voices.")
-                } actions: {
+                EmptyStateView(systemImage: "line.3.horizontal.decrease.circle", title: "No voices match",
+                               message: "Change the filters to see more voices.") {
                     Button("Show All Voices") { model.voiceLab.filter = VoiceFilter(language: .all) }
+                        .voiceCapsuleButton()
                         .accessibilityLabel("Clear the filters and show all voices")
                 }
+                .frame(maxWidth: .infinity)
+                .surface()
             } else {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: Theme.Space.s) {
                     ForEach(groups) { group in
                         Section {
                             ForEach(group.options) { option in
                                 VoiceOptionRow(option: option, perform: perform)
-                                Divider()
                             }
                         } header: {
                             Text(group.title)
-                                .font(.headline)
-                                .padding(.top, 14)
-                                .padding(.bottom, 4)
+                                .font(Theme.sectionTitle)
+                                .padding(.top, Theme.Space.l)
+                                .padding(.bottom, Theme.Space.xs)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .accessibilityAddTraits(.isHeader)
                         }
                     }
@@ -76,15 +78,26 @@ struct VoiceBrowser: View {
 
 private struct VoiceFilterBar: View {
     @Environment(AppModel.self) private var model
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         @Bindable var lab = model.voiceLab
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Search by name, accent or description", text: $lab.filter.search)
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 420)
-                .accessibilityLabel("Search voices")
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack(spacing: Theme.Space.s) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField("Search by name, accent or description", text: $lab.filter.search)
+                    .textFieldStyle(.plain)
+                    .focused($isSearchFocused)
+                    .accessibilityLabel("Search voices")
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .voiceTextField(focused: isSearchFocused)
+
+            VoiceFlowLayout(spacing: Theme.Space.l, lineSpacing: Theme.Space.s) {
                 Picker("Language", selection: $lab.filter.language) {
                     Text(bookLanguageTitle).tag(VoiceLanguageFilter.book)
                     Text("All languages").tag(VoiceLanguageFilter.all)
@@ -93,6 +106,7 @@ private struct VoiceFilterBar: View {
                         Text(Formatters.languageName(code)).tag(VoiceLanguageFilter.only(code))
                     }
                 }
+                .pickerStyle(.menu)
                 .fixedSize()
                 .accessibilityLabel("Filter by language")
 
@@ -102,16 +116,17 @@ private struct VoiceFilterBar: View {
                         Text(VoiceText.gender(g) ?? g).tag(Optional(g))
                     }
                 }
+                .pickerStyle(.segmented)
                 .fixedSize()
                 .accessibilityLabel("Filter by gender")
-            }
-            HStack(spacing: 14) {
+
                 Picker("Engine", selection: $lab.filter.engineId) {
                     Text("All engines").tag(String?.none)
                     ForEach(model.engines) { engine in
                         Text(engine.name).tag(Optional(engine.id))
                     }
                 }
+                .pickerStyle(.menu)
                 .fixedSize()
                 .accessibilityLabel("Filter by engine")
                 .help("Only voices this engine can speak with. Reference voices you choose are cloned by this engine.")
@@ -121,11 +136,14 @@ private struct VoiceFilterBar: View {
                         Text(license.title).tag(license)
                     }
                 }
+                .pickerStyle(.menu)
                 .fixedSize()
                 .accessibilityLabel("Filter by licence")
 
                 if lab.filter.isNarrowed {
                     Button("Reset Filters") { lab.filter = VoiceFilter() }
+                        .voiceCapsuleButton()
+                        .controlSize(.small)
                         .accessibilityLabel("Reset the voice filters")
                 }
             }
@@ -150,81 +168,126 @@ private struct VoiceOptionRow: View {
     @State private var error: EngineError?
     @State private var confirmingRemoval = false
 
+    /// Avatar width plus the gap after it: sub-content lines up with the name.
+    private static let avatarSize: CGFloat = 40
+    private static let indent: CGFloat = avatarSize + Theme.Space.m
+
     var body: some View {
         let target = model.voiceSelection(for: option)
         let chosen = option.isChosen(by: model.voiceSelection)
         let preview = target.flatMap { model.voicePreview(for: $0) }
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(chosen ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
-                    .font(.title3)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Text(option.name)
-                            .fontWeight(.medium)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let license = option.license {
-                            VoiceLicenseBadge(license: license, noncommercial: personalUseOnly)
-                        }
-                    }
-                    Text(facts)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                VoiceAvatar(name: option.name, language: option.language, size: Self.avatarSize, isSelected: chosen)
+                VStack(alignment: .leading, spacing: Theme.Space.xs + 2) {
+                    Text(option.name)
+                        .font(.headline)
                         .fixedSize(horizontal: false, vertical: true)
+                    VoiceFlowLayout(spacing: Theme.Space.xs + 2, lineSpacing: Theme.Space.xs + 2) {
+                        chips
+                    }
+                    if let facts {
+                        Text(facts)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     if let summary = option.summary {
                         Text(summary)
-                            .font(.caption)
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                     }
                 }
-                Spacer(minLength: 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 actions(target: target, chosen: chosen, preview: preview)
+                    .frame(minHeight: Self.avatarSize)
             }
 
             if let preview, preview.isRunning || preview.phase == .finished || preview.phase == .failed {
                 VoiceSampleStatus(run: preview, name: "the preview of \(option.name)")
-                    .padding(.leading, 30)
+                    .padding(Theme.Space.m - 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .insetSurface(radius: Theme.Radius.control)
+                    .padding(.leading, Self.indent)
             }
 
             if option.isReference, let entry = option.entry {
                 DisclosureGroup(isExpanded: $showDetails) {
                     VoiceReferenceDetails(option: option, entry: entry, confirmingRemoval: $confirmingRemoval, error: $error)
-                        .padding(.top, 6)
+                        .padding(.top, Theme.Space.s)
                 } label: {
                     Text(option.installed ? "Transcript and credits" : "Credits")
                         .font(.callout)
                 }
-                .padding(.leading, 30)
+                .padding(.leading, Self.indent)
                 .accessibilityLabel("Transcript and credits of \(option.name)")
             }
 
             if let error {
                 VoiceErrorNote(error: error)
-                    .padding(.leading, 30)
+                    .padding(.leading, Self.indent)
             }
         }
-        .padding(.vertical, 10)
+        .padding(Theme.Space.m + 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(chosen ? Theme.accent.opacity(0.07) : Color.clear, in: .smooth(Theme.Radius.tile))
+        .hoverHighlight(radius: Theme.Radius.tile)
+        .surface(radius: Theme.Radius.tile)
+        .overlay {
+            if chosen {
+                RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
+                    .strokeBorder(Theme.accent, lineWidth: 1.5)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(option.name)\(chosen ? ", narrator" : "")")
+        .contextMenu {
+            if option.isReference && option.installed {
+                if option.kind == .userClip {
+                    Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
+                } else {
+                    Button("Remove Download") { remove() }
+                }
+            }
+        }
         .confirmationDialog("Delete “\(option.name)”?", isPresented: $confirmingRemoval) {
             Button("Delete Voice", role: .destructive) { remove() }
                 .accessibilityLabel("Delete the voice \(option.name)")
         } message: {
-            Text("The copy of the recording kept by Audiobook Studio is deleted. Your original file is not touched.")
+            Text("Audiobook Studio deletes its copy of the recording and its transcript. Your original file and the audiobooks you already made are not affected.")
         }
     }
 
     /// The voice cannot be used commercially with any engine that can speak with it.
     private var personalUseOnly: Bool { !option.allowsCommercialUse(engines: model.engines) }
 
-    /// "French · Female · Clone with Qwen3-TTS 1.7B or Fish Audio S2 Pro · 11 s recording".
-    private var facts: String {
-        var parts = [Formatters.languageName(option.language)]
-        if let g = VoiceText.gender(option.gender) { parts.append(g) }
-        if let accent = option.accent { parts.append("\(accent) accent") }
+    /// Language, gender, accent, licence, "Your voice" and install state as chips.
+    @ViewBuilder
+    private var chips: some View {
+        Chip(text: Formatters.languageName(option.language), systemImage: "globe",
+             tint: VoiceStyle.tint(forLanguage: option.language))
+        if let gender = VoiceText.gender(option.gender) {
+            Chip(text: gender, systemImage: "person", tint: .secondary)
+        }
+        if let accent = option.accent {
+            Chip(text: "\(accent) accent", systemImage: "character.bubble", tint: .secondary)
+        }
+        if option.kind == .userClip {
+            Chip(text: "Your voice", systemImage: "person.crop.circle.fill", tint: Theme.highlight)
+        }
+        if let license = option.license {
+            VoiceLicenseBadge(license: license, noncommercial: personalUseOnly)
+        }
+        if option.isReference && !option.installed {
+            Chip(text: "Not installed", systemImage: "arrow.down.circle", tint: .secondary)
+        }
+    }
+
+    /// What the chips do not say: "Clone with Qwen3-TTS 1.7B or Fish Audio S2 Pro · 11 s recording",
+    /// or the preset's engine. nil when there is nothing left.
+    private var facts: String? {
+        var parts: [String] = []
         let engineNames = option.engineIds.compactMap { id in model.engineList?.engine(id)?.name }
         switch option.kind {
         case .preset:
@@ -232,23 +295,27 @@ private struct VoiceOptionRow: View {
         case .library, .userClip:
             if !engineNames.isEmpty { parts.append("Clone with " + engineNames.joined(separator: " or ")) }
             if let d = option.entry?.durationS { parts.append("\(Formatters.duration(d)) recording") }
-            if !option.installed { parts.append("Not installed") }
         }
-        return parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     @ViewBuilder
     private func actions(target: VoiceSelection?, chosen: Bool, preview: SampleRun?) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Space.s) {
             if option.isReference && !option.installed {
                 if model.busyVoiceIds.contains(option.voiceId) {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityLabel("Installing \(option.name)")
                 } else {
-                    Button("Install") { install() }
-                        .help("Downloads this reference recording (the internet is used for this step)")
-                        .accessibilityLabel("Install the voice \(option.name)")
+                    Button {
+                        install()
+                    } label: {
+                        Label("Install", systemImage: "arrow.down.circle")
+                    }
+                    .voiceCapsuleButton()
+                    .help("Downloads this reference recording (the internet is used for this step)")
+                    .accessibilityLabel("Install the voice \(option.name)")
                 }
             } else {
                 if let path = option.entry?.path, option.isReference {
@@ -257,10 +324,12 @@ private struct VoiceOptionRow: View {
                     Button {
                         model.player.toggle(url)
                     } label: {
-                        Image(systemName: playing ? "stop.circle" : "waveform.circle")
+                        Image(systemName: playing ? "stop.fill" : "waveform")
+                            .contentTransition(.symbolEffect(.replace))
+                            .frame(width: 16, height: 16)
                     }
-                    .buttonStyle(.borderless)
-                    .font(.title3)
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
                     .help(playing ? "Stop the reference recording" : "Listen to the reference recording")
                     .accessibilityLabel(playing ? "Stop the reference recording of \(option.name)"
                                                 : "Play the reference recording of \(option.name)")
@@ -270,19 +339,33 @@ private struct VoiceOptionRow: View {
                     Button("Preview") {
                         if let target { perform(.preview(target)) }
                     }
+                    .voiceCapsuleButton()
                     .disabled(problem != nil)
                     .help(problem ?? "Hear this voice read the book (about \(Formatters.duration(VoiceLab.previewSeconds)))")
                     .accessibilityLabel("Preview \(option.name) reading the book")
                 }
+                if option.kind == .userClip && option.installed {
+                    Button(role: .destructive) {
+                        confirmingRemoval = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.bordered)
+                    .buttonBorderShape(.circle)
+                    .disabled(model.busyVoiceIds.contains(option.voiceId))
+                    .help("Delete this voice")
+                    .accessibilityLabel("Delete the voice \(option.name)")
+                }
                 if chosen {
-                    Text("Narrator")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                    Chip(text: "Narrator", systemImage: "checkmark", tint: Theme.accent, filled: true)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel("\(option.name) is the narrator")
                 } else {
                     Button("Use") {
                         if let target { perform(.select(target)) }
                     }
+                    .voiceCapsuleButton()
                     .disabled(target == nil)
                     .help(useHelp(target))
                     .accessibilityLabel("Use \(option.name) as the narrator")
@@ -324,12 +407,14 @@ private struct VoiceReferenceDetails: View {
     @Binding var error: EngineError?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
             if option.installed {
                 VoiceTranscriptEditor(entry: entry)
             } else if let transcript = entry.transcript, !transcript.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Transcript").font(.caption.weight(.semibold))
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("Transcript")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     Text(transcript)
                         .font(.callout)
                         .textSelection(.enabled)
@@ -337,8 +422,10 @@ private struct VoiceReferenceDetails: View {
                 }
             }
             if let attribution = entry.attribution, !attribution.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Credits").font(.caption.weight(.semibold))
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("Credits")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                     Text(attribution)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -347,20 +434,29 @@ private struct VoiceReferenceDetails: View {
                 }
             }
             if let source = entry.sourcePage, !source.isEmpty {
-                Text("Source: \(source)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
+                Label {
+                    Text("Source: \(source)")
+                        .textSelection(.enabled)
+                } icon: {
+                    Image(systemName: "link")
+                        .foregroundStyle(Theme.faint)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
             if option.installed {
                 let busy = model.busyVoiceIds.contains(entry.id)
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Space.s) {
                     if option.kind == .userClip {
                         Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
+                            .voiceCapsuleButton()
+                            .controlSize(.small)
                             .disabled(busy)
                             .accessibilityLabel("Delete the voice \(entry.name)")
                     } else {
                         Button("Remove Download") { remove() }
+                            .voiceCapsuleButton()
+                            .controlSize(.small)
                             .disabled(busy)
                             .help("Deletes the downloaded recording; you can install it again later")
                             .accessibilityLabel("Remove the downloaded voice \(entry.name)")
@@ -389,6 +485,7 @@ private struct VoiceTranscriptEditor: View {
     @State private var text = ""
     @State private var error: EngineError?
     @State private var justSaved = false
+    @FocusState private var isEditing: Bool
 
     private var original: String { entry.transcript ?? "" }
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -396,36 +493,46 @@ private struct VoiceTranscriptEditor: View {
     private var isBusy: Bool { model.busyVoiceIds.contains(entry.id) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Transcript").font(.caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            Text("Transcript")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
             TextEditor(text: $text)
+                .focused($isEditing)
                 .font(.callout)
                 .scrollContentBackground(.hidden)
-                .padding(4)
+                .padding(Theme.Space.s - 2)
                 .frame(minHeight: 54, maxHeight: 110)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
-                }
+                .voiceTextField(focused: isEditing)
                 .accessibilityLabel("Transcript of \(entry.name)")
                 .accessibilityHint("The exact words spoken in the reference recording")
             Text(VoiceText.transcriptSource(entry.transcriptSource))
                 .font(.caption)
-                .foregroundStyle(entry.transcriptSource == "whisper" ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                .foregroundStyle(entry.transcriptSource == "whisper" ? AnyShapeStyle(Theme.warning) : AnyShapeStyle(.secondary))
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Space.s) {
                 Button("Save Transcript") { save() }
+                    .voiceCapsuleButton(prominent: true)
+                    .controlSize(.small)
                     .disabled(!isChanged || trimmed.isEmpty || isBusy)
                     .accessibilityLabel("Save the transcript of \(entry.name)")
                 Button("Revert") { text = original }
+                    .voiceCapsuleButton()
+                    .controlSize(.small)
                     .disabled(!isChanged || isBusy)
                     .accessibilityLabel("Undo the transcript changes")
                 if isBusy {
                     ProgressView().controlSize(.small).accessibilityLabel("Saving")
                 } else if justSaved && !isChanged {
-                    Label("Saved", systemImage: "checkmark")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Label {
+                        Text("Saved")
+                    } icon: {
+                        Image(systemName: "checkmark.circle.fill")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(Theme.success)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             if let error { VoiceErrorNote(error: error) }

@@ -50,6 +50,7 @@ private struct DetailRouter: View {
 
 private struct SidebarView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         @Bindable var model = model
@@ -57,12 +58,14 @@ private struct SidebarView: View {
             Label("New audiobook", systemImage: "book.closed")
                 .tag(SidebarItem.newBook)
                 .accessibilityLabel("New audiobook")
+                .listItemTint(rowTint)
 
             Section("Conversions") {
                 Label("Jobs", systemImage: "list.bullet.rectangle")
                     .badge(model.activeJobCount)
                     .tag(SidebarItem.jobs)
                     .accessibilityLabel(jobsAccessibilityLabel)
+                    .listItemTint(rowTint)
                 ForEach(model.sidebarMonitors) { monitor in
                     SidebarJobRow(monitor: monitor)
                         .tag(SidebarItem.job(monitor.jobId))
@@ -73,12 +76,15 @@ private struct SidebarView: View {
                 Label("Voices", systemImage: "person.wave.2")
                     .tag(SidebarItem.voices)
                     .accessibilityLabel("Voices")
+                    .listItemTint(rowTint)
                 Label("Models", systemImage: "shippingbox")
                     .tag(SidebarItem.models)
                     .accessibilityLabel("Models")
+                    .listItemTint(rowTint)
                 Label("Benchmark", systemImage: "speedometer")
                     .tag(SidebarItem.benchmark)
                     .accessibilityLabel("Benchmark")
+                    .listItemTint(rowTint)
             }
         }
         .listStyle(.sidebar)
@@ -95,6 +101,9 @@ private struct SidebarView: View {
         }
     }
 
+    /// Dark mode: grey sidebar icons instead of the accent (indigo is hard to read on dark).
+    private var rowTint: ListItemTint? { colorScheme == .dark ? .monochrome : nil }
+
     private var jobsAccessibilityLabel: String {
         switch model.activeJobCount {
         case 0: return "Jobs"
@@ -110,10 +119,18 @@ private struct SidebarJobRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView(value: monitor.fraction)
-                .progressViewStyle(.circular)
-                .controlSize(.small)
-                .accessibilityHidden(true)
+            Group {
+                if monitor.state.isActive {
+                    ProgressRing(progress: monitor.fraction, lineWidth: 2.5, tint: OpsStyle.tint(for: monitor.state))
+                } else {
+                    Image(systemName: finishedSymbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(OpsStyle.tint(for: monitor.state))
+                }
+            }
+            .frame(width: 18, height: 18)
+            .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(monitor.displayTitle)
                     .lineLimit(1)
@@ -126,6 +143,15 @@ private struct SidebarJobRow: View {
         .padding(.leading, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(monitor.displayTitle), \(subtitle)")
+    }
+
+    private var finishedSymbol: String {
+        switch monitor.state {
+        case .done: return "checkmark.circle.fill"
+        case .doneWithProblems: return "exclamationmark.circle.fill"
+        case .failed: return "xmark.circle.fill"
+        default: return "stop.circle.fill"
+        }
     }
 
     private var subtitle: String {
@@ -188,16 +214,18 @@ private struct EngineProblemBanner: View {
 /// Highlight while a file is dragged over the window.
 private struct DropHighlight: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 3, dash: [8, 6]))
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+            .strokeBorder(Theme.accent, style: StrokeStyle(lineWidth: 2.5, dash: [10, 7]))
+            .background(Theme.accent.opacity(0.07), in: .smooth(Theme.Radius.card))
             .overlay {
-                Label("Drop an EPUB or PDF to make an audiobook", systemImage: "arrow.down.doc")
-                    .font(.title3)
-                    .padding(16)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                Label("Drop an EPUB or PDF to make an audiobook", systemImage: "arrow.down.doc.fill")
+                    .font(.title3.weight(.semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .padding(.horizontal, Theme.Space.xl)
+                    .padding(.vertical, Theme.Space.l)
+                    .glassEffect(.regular, in: .capsule)
             }
-            .padding(8)
+            .padding(10)
             .allowsHitTesting(false)
             .accessibilityLabel("Drop an EPUB or PDF to make an audiobook")
     }

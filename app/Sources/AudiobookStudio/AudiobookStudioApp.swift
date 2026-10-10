@@ -51,7 +51,11 @@ private struct OpenBookCommand: View {
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     static let mainWindowID = "main"
 
-    let model = AppModel()
+    /// The self-check tour (SnapshotTour) keeps its settings in a separate defaults domain, so it never reads
+    /// or changes the user's own preferences.
+    let model = AppModel(settings: SnapshotTour.directory == nil
+        ? AppSettings()
+        : AppSettings(defaults: UserDefaults(suiteName: "local.audiobookstudio.snapshot") ?? .standard))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `swift run` starts a bare executable: make it a regular app with a Dock icon and a menu bar.

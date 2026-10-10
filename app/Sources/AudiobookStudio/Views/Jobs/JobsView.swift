@@ -46,28 +46,41 @@ struct JobsView: View {
     private var content: some View {
         if model.jobs.isEmpty {
             emptyState
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(AmbientBackground())
         } else {
-            List {
-                if let error = model.errors[.jobs] {
-                    OpsErrorBox(error: error)
-                }
-                if let actionError {
-                    OpsErrorBox(error: actionError) { self.actionError = nil }
-                }
-                let active = model.jobsInProgress
-                if !active.isEmpty {
-                    Section("In progress") {
-                        ForEach(active) { row($0) }
+            ScrollView {
+                // No large "Jobs" title here: the window title already says it (as on Models and Benchmark).
+                VStack(alignment: .leading, spacing: Theme.Space.xl) {
+                    if let error = model.errors[.jobs] {
+                        OpsErrorBox(error: error)
+                    }
+                    if let actionError {
+                        OpsErrorBox(error: actionError) { self.actionError = nil }
+                    }
+                    let active = model.jobsInProgress
+                    if !active.isEmpty {
+                        section("In progress", jobs: active)
+                    }
+                    let finished = model.jobsFinished
+                    if !finished.isEmpty {
+                        section("Past conversions", jobs: finished)
                     }
                 }
-                let finished = model.jobsFinished
-                if !finished.isEmpty {
-                    Section("Past conversions") {
-                        ForEach(finished) { row($0) }
-                    }
-                }
+                .padding(.horizontal, Theme.Space.xxl)
+                .padding(.vertical, Theme.Space.xl)
+                .screenWidth()
             }
-            .listStyle(.inset)
+            .background(AmbientBackground())
+        }
+    }
+
+    private func section(_ title: String, jobs: [JobStatus]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            SectionHeader(title)
+            LazyVStack(alignment: .leading, spacing: Theme.Space.m) {
+                ForEach(jobs) { row($0) }
+            }
         }
     }
 
@@ -77,25 +90,27 @@ struct JobsView: View {
             ProgressView("Loading jobs…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = model.errors[.jobs] {
-            VStack(spacing: 12) {
+            VStack(spacing: Theme.Space.m) {
                 OpsErrorBox(error: error)
                 Button("Try Again") {
                     Task { await model.refreshJobs() }
                 }
+                .jobsCardButton()
+                .controlSize(.large)
                 .accessibilityLabel("Try loading the job list again")
             }
-            .padding(24)
+            .padding(Theme.Space.xl)
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ContentUnavailableView {
-                Label("No conversions yet", systemImage: "waveform")
-            } description: {
-                Text("Open a book and choose a voice to make your first audiobook. Conversions appear here while they run and after they finish.")
-            } actions: {
+            EmptyStateView(systemImage: "waveform", title: "No conversions yet",
+                           message: "Open a book and choose a voice to make your first audiobook. Conversions appear here while they run and after they finish.") {
                 Button("New Audiobook") { model.selection = .newBook }
+                    .jobsCardButton(prominent: true)
+                    .controlSize(.large)
                     .accessibilityLabel("Start a new audiobook")
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -181,54 +196,90 @@ struct JobResumeLicenseRequest: Identifiable {
     var id: String { job.jobId }
 }
 
-/// One job in the list: state icon, title, narration, live progress or outcome, start date.
+/// One job in the list, as a card: a mini progress ring (active) or a state badge (finished), title,
+/// author and narration, live progress or outcome, then the state chip and start date on the right.
 private struct JobRow: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let job: JobStatus
 
     var body: some View {
         let state = model.liveState(of: job)
         let monitor = model.monitors[job.jobId]
         let line = JobText.listLine(job: job, monitor: monitor, state: state)
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: state.systemImage)
-                .font(.title2)
-                .foregroundStyle(OpsStyle.tint(for: state))
-                .frame(width: 30)
-                .accessibilityHidden(true)
+        HStack(alignment: .center, spacing: Theme.Space.l) {
+            leading(state: state, monitor: monitor)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title(monitor))
-                        .font(.headline)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if let started = job.startedDate {
-                        Text(JobText.date(started))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(title(monitor))
+                    .font(.headline)
                     .lineLimit(1)
-                if state.isActive {
-                    ProgressView(value: fraction(monitor))
-                        .accessibilityHidden(true)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Text(line)
-                    .font(.caption)
-                    .foregroundStyle(state == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                    .font(.callout)
+                    .foregroundStyle(state == .failed ? AnyShapeStyle(Theme.danger) : AnyShapeStyle(.secondary))
                     .lineLimit(2)
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .smooth, value: line)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: Theme.Space.s) {
+                OpsStateBadge(state: state)
+                if let started = job.startedDate {
+                    Text(JobText.date(started))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .fixedSize()
             Image(systemName: "chevron.right")
-                .foregroundStyle(.tertiary)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Theme.faint)
                 .accessibilityHidden(true)
         }
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
+        .padding(.horizontal, Theme.Space.l)
+        .padding(.vertical, Theme.Space.m + 2)
+        .contentShape(.rect(cornerRadius: Theme.Radius.card, style: .continuous))
+        .hoverHighlight(radius: Theme.Radius.card)
+        .surface()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title(monitor)), \(state.title). \(subtitle). \(line)")
+    }
+
+    /// Live jobs: a small ring with the percentage (an hourglass while waiting). Finished jobs: a state badge.
+    @ViewBuilder
+    private func leading(state: JobState, monitor: JobMonitor?) -> some View {
+        let tint = OpsStyle.tint(for: state)
+        Group {
+            if state.isActive {
+                let progress = fraction(monitor)
+                ProgressRing(progress: progress, lineWidth: 4, tint: tint) {
+                    if state == .queued {
+                        Image(systemName: "hourglass")
+                            .font(.callout.weight(.semibold))
+                            // The queued tint is the accent: only the ring keeps it in dark mode.
+                            .foregroundStyle(ReadableForeground(tint))
+                    } else {
+                        Text(Formatters.percent(progress * 100))
+                            .font(Theme.number(.caption2, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .padding(.horizontal, 5)
+                            .contentTransition(.numericText())
+                            .animation(reduceMotion ? nil : .smooth, value: progress)
+                    }
+                }
+            } else {
+                IconBadge(systemImage: JobsStateSymbol.badge(for: state), tint: tint, size: 44)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .accessibilityHidden(true)
     }
 
     private func title(_ monitor: JobMonitor?) -> String {

@@ -7,23 +7,19 @@ struct BookNarratorPanel: View {
     let draft: BookDraft
 
     var body: some View {
-        BookCard(title: "Narrator and output", systemImage: "person.wave.2") {
+        SurfaceCard("Narrator and output", systemImage: "person.wave.2") {
             voiceRow
             if model.voiceSelection != nil {
                 speechCheck
             }
             if let warning = model.bookVoiceWarning(voice: model.voiceSelection, language: draft.language) {
-                Label {
+                InlineBanner(systemImage: "exclamationmark.triangle.fill", tint: Theme.warning) {
                     Text(warning.message)
                         .fixedSize(horizontal: false, vertical: true)
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
                 }
                 .font(.callout)
                 .accessibilityElement(children: .combine)
             }
-            Divider()
             outputRow
         }
     }
@@ -31,11 +27,14 @@ struct BookNarratorPanel: View {
     // MARK: Voice
 
     private var voiceRow: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            IconBadge(systemImage: "person.wave.2.fill",
+                      tint: model.voiceSelection == nil ? .secondary : Theme.accent, size: 44)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                     Text(voiceName)
-                        .font(.body.weight(.medium))
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
                     if let engine = model.bookSelectedEngine, engine.noncommercial {
                         BookLicenseBadge(text: "NON-COMMERCIAL",
                                          help: "\(engine.name) is licensed for non-commercial use only (\(engine.license))")
@@ -48,12 +47,14 @@ struct BookNarratorPanel: View {
                     Text(detail)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Spacer(minLength: 12)
+            Spacer(minLength: Theme.Space.m)
             Button(model.voiceSelection == nil ? "Choose Voice…" : "Change Voice…") {
                 model.selection = .voices
             }
+            .bookCardButton(prominent: model.voiceSelection == nil)
             .accessibilityLabel(model.voiceSelection == nil ? "Choose a voice" : "Change the voice")
             .accessibilityHint("Opens the Voices screen")
         }
@@ -84,16 +85,25 @@ struct BookNarratorPanel: View {
     }
 
     private var speechCheck: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Toggle("Check every sentence with speech recognition", isOn: verifyBinding)
-                .toggleStyle(.checkbox)
-                .accessibilityLabel("Check every sentence with speech recognition")
-                .accessibilityHint("About 15 percent more time. Sentences that do not match the text are narrated again.")
-            Text("About +15% time. Sentences that do not match the text are narrated again, or flagged for you to check.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 20)
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            IconBadge(systemImage: "text.badge.checkmark", tint: Theme.success)
+            Toggle(isOn: verifyBinding) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Check every sentence with speech recognition")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("About +15% time. Sentences that do not match the text are narrated again, or flagged for you to check.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .toggleStyle(.switch)
+            .accessibilityLabel("Check every sentence with speech recognition")
+            .accessibilityHint("About 15 percent more time. Sentences that do not match the text are narrated again.")
         }
+        .padding(Theme.Space.m)
+        .insetSurface()
     }
 
     private var verifyBinding: Binding<Bool> {
@@ -105,12 +115,11 @@ struct BookNarratorPanel: View {
     @ViewBuilder
     private var outputRow: some View {
         if let location = model.bookOutputLocation {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: "folder")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                IconBadge(systemImage: "folder.fill", tint: Theme.accent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Save to: \(location.title)")
+                        .font(.body.weight(.medium))
                     Text(location.detail)
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -120,21 +129,26 @@ struct BookNarratorPanel: View {
                     if location.isCustom && !FileActions.exists(location.folderURL) {
                         Label("This folder does not exist. Choose another one.", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Theme.warning)
                     }
                     Text("AAC \(model.settings.bitrateKbps) kbps .m4b with chapters (quality is set in Settings)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
-                Spacer(minLength: 12)
+                Spacer(minLength: Theme.Space.m)
                 Button("Choose…") { model.chooseBookOutputFolder() }
+                    .bookCardButton()
                     .accessibilityLabel("Choose the folder for the audiobook")
                 if location.isCustom {
                     Button("Next to the Book") { model.settings.outputFolder = nil }
+                        .bookCardButton()
                         .accessibilityLabel("Save the audiobook next to the book")
                 }
             }
+            .padding(Theme.Space.m)
+            .insetSurface()
         }
     }
 }

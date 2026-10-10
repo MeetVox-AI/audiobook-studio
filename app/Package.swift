@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 // Audiobook Studio — native macOS front end for the local audiobook engine.
 // Build:  ./scripts/bundle.sh      (creates build/AudiobookStudio.app)
 // Dev:    swift run                (runs without a bundle; notifications disabled)
@@ -6,7 +6,7 @@ import PackageDescription
 
 let package = Package(
     name: "AudiobookStudio",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     targets: [
         .executableTarget(
             name: "AudiobookStudio",

@@ -8,26 +8,26 @@ struct BenchmarkView: View {
     @State private var engineId: String?
     @State private var language: String?
     @State private var choiceId: String?
-    @State private var sortOrder = [KeyPathComparator(\OpsMeasuredRow.updatedSortKey, order: .reverse)]
+    @State private var sortKey: BenchmarkSortKey = .date
+    @State private var sortAscending = false
     /// Benchmark waiting for the licence of a non-commercial engine to be acknowledged (first use only).
     @State private var pendingLicense: BenchmarkLicenseRequest?
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("A benchmark narrates a short fixed passage to measure how fast an engine and voice run on this Mac. Estimates use the latest measurement, from a benchmark, a sample or a finished conversion.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: Theme.Space.xl) {
+                ScreenIntro("A benchmark narrates a short fixed passage to measure how fast an engine and voice run on this Mac. Estimates use the latest measurement, from a benchmark, a sample or a finished conversion.")
                 runCard
                 ForEach(model.benchmarks.prefix(5)) { run in
                     BenchmarkRunCard(run: run)
                 }
                 historyCard
             }
-            .padding(24)
-            .frame(maxWidth: 900, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Theme.Space.xxl)
+            .padding(.vertical, Theme.Space.xl)
+            .screenWidth()
         }
+        .background(AmbientBackground())
         .navigationTitle("Benchmark")
         .sheet(item: $pendingLicense) { request in
             // The sheet saves the acknowledgement itself, then the benchmark starts.
@@ -57,7 +57,7 @@ struct BenchmarkView: View {
 
     @ViewBuilder
     private var runCard: some View {
-        OpsCard("Measure a voice") {
+        SurfaceCard("Measure a voice", systemImage: "speedometer") {
             if let selection {
                 form(selection)
             } else if model.loading.contains(.engines) {
@@ -67,6 +67,7 @@ struct BenchmarkView: View {
             } else {
                 Text("No engines are available. Check the engine location in Settings.")
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -75,7 +76,7 @@ struct BenchmarkView: View {
     private func form(_ s: OpsBenchmarkSelection) -> some View {
         let installed = model.opsModelInstalled(s.engine.id)
         let running = model.benchmarks.contains { $0.isRunning }
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 10) {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Theme.Space.l, verticalSpacing: Theme.Space.m) {
             GridRow {
                 Text("Engine").foregroundStyle(.secondary)
                 Picker("Engine", selection: engineBinding(s)) {
@@ -119,34 +120,51 @@ struct BenchmarkView: View {
         }
 
         if installed == false {
-            HStack {
-                OpsNotice(text: "The \(s.engine.name) model is not installed. Download it before measuring it.",
-                          systemImage: "arrow.down.circle", tint: .orange)
-                Button("Open Models") { model.selection = .models }
-                    .accessibilityLabel("Open the Models screen to download this model")
+            InlineBanner(systemImage: "arrow.down.circle", tint: Theme.warning) {
+                HStack(alignment: .center, spacing: Theme.Space.m) {
+                    Text("The \(s.engine.name) model is not installed. Download it before measuring it.")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Spacer(minLength: Theme.Space.s)
+                    Button("Open Models") { model.selection = .models }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .accessibilityLabel("Open the Models screen to download this model")
+                }
             }
+            .accessibilityElement(children: .contain)
         }
         if model.activeJobCount > 0 {
-            OpsNotice(text: "A conversion is running: the benchmark waits for the GPU and starts when it is free.",
-                      systemImage: "hourglass")
+            InlineBanner(systemImage: "hourglass", tint: .secondary) {
+                Text("A conversion is running: the benchmark waits for the GPU and starts when it is free.")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            .accessibilityElement(children: .combine)
         }
 
-        HStack(spacing: 10) {
+        HStack(spacing: Theme.Space.m) {
             Button {
                 if let choice = s.choice { runBenchmark(choice.selection, language: s.language) }
             } label: {
                 Label("Run Benchmark", systemImage: "speedometer")
             }
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
             .disabled(s.choice == nil || running || installed == false)
             .accessibilityLabel("Run the benchmark")
             .help(running ? "A benchmark is already running" : "Narrates a short passage and measures the speed")
             if let m = s.choice.flatMap({ c in model.engineList?.measured["\(c.selection.engineId)|\(c.selection.voiceId ?? "")"] }) {
                 Text("Last measured: \(Formatters.charsPerSecond(m.charsPerS))\(m.realtimeX.map { " · " + Formatters.realtime($0) } ?? "")")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(.top, Theme.Space.xs)
     }
 
     /// Starts the benchmark, after the licence sheet the first time a non-commercial engine is used.
@@ -193,39 +211,117 @@ struct BenchmarkView: View {
 
     // MARK: History
 
+    // A list rather than a Table: six table columns need about 640 pt, more than the card has at the
+    // default window size, which made the table scroll sideways. Sorting moved to a "Sort by" menu.
     @ViewBuilder
     private var historyCard: some View {
-        let rows = model.opsMeasuredRows.sorted(using: sortOrder)
-        OpsCard("Measured on this Mac") {
+        let rows = sortKey.sorted(model.opsMeasuredRows, ascending: sortAscending)
+        SurfaceCard("Measured on this Mac", systemImage: "clock.arrow.circlepath") {
+            if !rows.isEmpty {
+                HStack(spacing: Theme.Space.xs) {
+                    Picker("Sort by", selection: $sortKey) {
+                        ForEach(BenchmarkSortKey.allCases) { key in
+                            Text(key.title).tag(key)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    Button {
+                        sortAscending.toggle()
+                    } label: {
+                        Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(sortAscending ? "Ascending: click for descending" : "Descending: click for ascending")
+                    .accessibilityLabel(sortAscending ? "Sorted ascending" : "Sorted descending")
+                    .accessibilityHint("Reverses the order")
+                }
+            }
+        } content: {
             if rows.isEmpty {
                 Text("Nothing measured yet. Run a benchmark, make a sample or finish a conversion to record a speed.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Table(rows, sortOrder: $sortOrder) {
-                    TableColumn("Engine", value: \.engineName)
-                        .width(min: 110, ideal: 150)
-                    TableColumn("Voice", value: \.voiceName)
-                        .width(min: 110, ideal: 170)
-                    TableColumn("Speed", value: \.charsPerSecond) { row in
-                        Text(Formatters.charsPerSecond(row.charsPerSecond)).monospacedDigit()
+                VStack(spacing: 2) {
+                    ForEach(rows) { row in
+                        BenchmarkHistoryRow(row: row)
                     }
-                    .width(min: 125, ideal: 135)
-                    TableColumn("Real time", value: \.realtimeX) { row in
-                        Text(row.realtimeText).monospacedDigit()
-                    }
-                    .width(min: 80, ideal: 90)
-                    TableColumn("Measured by", value: \.source)
-                        .width(min: 80, ideal: 100)
-                    TableColumn("Date", value: \.updatedSortKey) { row in
-                        Text(row.updatedText)
-                    }
-                    .width(min: 80, ideal: 110)
                 }
-                .frame(height: min(420, CGFloat(rows.count) * 26 + 34))
+                .accessibilityElement(children: .contain)
                 .accessibilityLabel("Speeds measured on this Mac")
             }
         }
+    }
+}
+
+/// What the measured-speeds list is sorted by.
+private enum BenchmarkSortKey: String, CaseIterable, Identifiable {
+    case date, speed, realtime, engine, voice, source
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .date: return "Date"
+        case .speed: return "Speed"
+        case .realtime: return "Real time"
+        case .engine: return "Engine"
+        case .voice: return "Voice"
+        case .source: return "Measured by"
+        }
+    }
+
+    func sorted(_ rows: [OpsMeasuredRow], ascending: Bool) -> [OpsMeasuredRow] {
+        let order: SortOrder = ascending ? .forward : .reverse
+        switch self {
+        case .date: return rows.sorted(using: KeyPathComparator(\.updatedSortKey, order: order))
+        case .speed: return rows.sorted(using: KeyPathComparator(\.charsPerSecond, order: order))
+        case .realtime: return rows.sorted(using: KeyPathComparator(\.realtimeX, order: order))
+        case .engine: return rows.sorted(using: KeyPathComparator(\.engineName, order: order))
+        case .voice: return rows.sorted(using: KeyPathComparator(\.voiceName, order: order))
+        case .source: return rows.sorted(using: KeyPathComparator(\.source, order: order))
+        }
+    }
+}
+
+/// One measured speed: voice and engine on the left, speed in the middle, how and when on the right.
+private struct BenchmarkHistoryRow: View {
+    let row: OpsMeasuredRow
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Theme.Space.m) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.voiceName)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                Text(row.engineName)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(Formatters.charsPerSecond(row.charsPerSecond))
+                    .font(Theme.number(.body))
+                Text(row.realtimeText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            VStack(alignment: .trailing, spacing: 3) {
+                Chip(text: row.source)
+                Text(row.updatedText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 110, alignment: .trailing)
+        }
+        .padding(.vertical, Theme.Space.s)
+        .padding(.horizontal, Theme.Space.s + 2)
+        .hoverHighlight()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(row.voiceName), \(row.engineName): \(Formatters.charsPerSecond(row.charsPerSecond)), \(row.realtimeText). \(row.source), \(row.updatedText)")
     }
 }
 
@@ -240,17 +336,22 @@ private struct BenchmarkLicenseRequest: Identifiable {
 /// A benchmark started this session: progress while it runs, then its figures or its error.
 private struct BenchmarkRunCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let run: BenchmarkRun
 
     var body: some View {
-        OpsCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(run.voice.displayName(engines: model.engines, voices: model.voices))
-                        .font(.headline)
-                    Text(Formatters.languageName(run.language))
-                        .foregroundStyle(.secondary)
-                    Spacer()
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: Theme.Space.m + 2) {
+                HStack(alignment: .center, spacing: Theme.Space.m) {
+                    IconBadge(systemImage: "speedometer", tint: phaseTint, size: 36)
+                        .symbolEffect(.pulse, options: .repeating, isActive: run.isRunning && !reduceMotion)
+                    VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                        Text(run.voice.displayName(engines: model.engines, voices: model.voices))
+                            .font(.headline)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Chip(text: Formatters.languageName(run.language), systemImage: "globe", tint: .secondary)
+                    }
+                    Spacer(minLength: Theme.Space.m)
                     Text(JobText.date(run.startedAt))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -258,29 +359,53 @@ private struct BenchmarkRunCard: View {
                 switch run.phase {
                 case .finished:
                     if let result = run.result {
-                        OpsFigureGrid(items: JobResultSummary.benchmarkItems(result), minWidth: 140)
+                        StatGrid(minWidth: 160) {
+                            ForEach(JobResultSummary.benchmarkItems(result)) { item in
+                                StatTile(label: item.label, value: item.value, systemImage: item.systemImage)
+                            }
+                        }
                     }
                 case .failed:
                     OpsErrorBox(error: run.error ?? EngineError(message: "The benchmark failed."))
                 case .cancelled:
-                    Text("Stopped before it finished.")
+                    Label("Stopped before it finished.", systemImage: "stop.circle")
                         .foregroundStyle(.secondary)
                 default:
-                    HStack(spacing: 10) {
+                    HStack(spacing: Theme.Space.m) {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityHidden(true)
                         Text(run.statusText)
+                            .fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         Button("Stop") { run.cancel() }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
                             .accessibilityLabel("Stop the benchmark")
                     }
+                    .padding(Theme.Space.m)
+                    .insetSurface()
                     .accessibilityElement(children: .contain)
                 }
                 ForEach(Array(run.notices.enumerated()), id: \.offset) { _, notice in
-                    OpsNotice(text: notice)
+                    InlineBanner(systemImage: "info.circle", tint: .secondary) {
+                        Text(notice)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityElement(children: .combine)
                 }
             }
+            .animation(reduceMotion ? nil : .smooth, value: run.phase)
+        }
+    }
+
+    private var phaseTint: Color {
+        switch run.phase {
+        case .finished: return Theme.success
+        case .failed: return Theme.danger
+        case .cancelled: return .secondary
+        default: return Theme.accent
         }
     }
 }

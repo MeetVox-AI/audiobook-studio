@@ -20,6 +20,10 @@ for b in "$(swift build -c release --show-bin-path)"/*.bundle(N); do cp -R "$b" 
 if [[ -f "$APP_DIR/Sources/AudiobookStudio/Resources/AppIcon.icns" ]]; then
   cp "$APP_DIR/Sources/AudiobookStudio/Resources/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 fi
+# The app's accent colour (indigo, used when the system accent is set to Multicolor): Assets.car + NSAccentColorName.
+xcrun actool "$APP_DIR/Assets/Assets.xcassets" --compile "$OUT/Contents/Resources" --platform macosx \
+  --minimum-deployment-target 26.0 --accent-color AccentColor \
+  --output-partial-info-plist "$APP_DIR/build/assets-partial.plist" --output-format human-readable-text >/dev/null
 
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,7 +37,8 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>NSAccentColorName</key><string>AccentColor</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>AudiobookEnginePath</key><string>$ENGINE</string>

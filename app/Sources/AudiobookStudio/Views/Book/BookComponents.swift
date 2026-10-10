@@ -1,27 +1,18 @@
 import AppKit
 import SwiftUI
 
-// Small building blocks shared by the "New audiobook" screen (Views/Book).
+// Small building blocks shared by the "New audiobook" screen (Views/Book), drawn with the design system
+// (Design/Theme.swift, Design/Components.swift; rules in app/DESIGN.md).
 
-/// A titled, rounded panel.
-struct BookCard<Content: View>: View {
-    let title: String
-    let systemImage: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-                .accessibilityAddTraits(.isHeader)
-            content
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: .separatorColor))
+extension View {
+    /// Button look inside the book screen's content cards: `.borderedProminent` for the card's one primary
+    /// action, `.bordered` otherwise, both as capsules.
+    @ViewBuilder
+    func bookCardButton(prominent: Bool = false) -> some View {
+        if prominent {
+            buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
+        } else {
+            buttonStyle(.bordered).buttonBorderShape(.capsule)
         }
     }
 }
@@ -34,16 +25,17 @@ struct BookErrorView: View {
     var onDismiss: (() -> Void)?
     @State private var showDetails = false
 
-    private var tint: Color { error.isDiskSpace ? .red : .orange }
+    private var tint: Color { error.isDiskSpace ? Theme.danger : Theme.warning }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
                 Image(systemName: error.isDiskSpace ? "externaldrive.fill.badge.exclamationmark" : "exclamationmark.triangle.fill")
                     .font(error.isDiskSpace ? .title2 : .body)
+                    .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(tint)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     if error.isDiskSpace {
                         Text("Not enough disk space")
                             .font(.headline)
@@ -52,9 +44,11 @@ struct BookErrorView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                 }
-                Spacer(minLength: 8)
+                Spacer(minLength: Theme.Space.s)
                 if error.engineMissing {
                     SettingsLink { Text("Open Settings") }
+                        .bookCardButton()
+                        .controlSize(.small)
                         .accessibilityLabel("Open Settings to set the engine location")
                 }
                 if let onDismiss {
@@ -73,18 +67,21 @@ struct BookErrorView: View {
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Theme.Space.s)
                     }
                     .frame(maxHeight: 160)
+                    .insetSurface(radius: Theme.Radius.control)
+                    .padding(.top, Theme.Space.xs)
                 }
                 .accessibilityLabel("Engine log details")
             }
         }
-        .padding(12)
+        .padding(Theme.Space.m + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .background(tint.opacity(error.isDiskSpace ? 0.14 : 0.11), in: .smooth(Theme.Radius.tile))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(tint.opacity(error.isDiskSpace ? 0.6 : 0.3))
+            RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
+                .strokeBorder(tint.opacity(error.isDiskSpace ? 0.5 : 0.18))
         }
         .accessibilityElement(children: .contain)
     }
@@ -96,28 +93,22 @@ struct BookNoticeView: View {
     var systemImage = "info.circle"
 
     var body: some View {
-        Label {
+        InlineBanner(systemImage: systemImage, tint: Theme.accent) {
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-        } icon: {
-            Image(systemName: systemImage)
-                .foregroundStyle(.secondary)
         }
         .font(.callout)
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
-/// "Chapter" / "Front" / "Back" badge in the section list.
+/// "Chapter" / "Front" / "Back" chip in the section list (front and back matter muted).
 struct BookKindBadge: View {
     let kind: SectionKind
 
     private var tint: Color {
         switch kind {
-        case .chapter: return .accentColor
+        case .chapter: return Theme.accent
         case .front, .back: return .secondary
         }
     }
@@ -131,40 +122,37 @@ struct BookKindBadge: View {
     }
 
     var body: some View {
-        Text(kind.title)
-            .font(.caption2.weight(.semibold))
-            .textCase(.uppercase)
-            .foregroundStyle(tint)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .frame(minWidth: 58)
-            .background(tint.opacity(0.14), in: Capsule())
+        Chip(text: kind.title, tint: tint)
+            .fixedSize()
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenName)
     }
 }
 
-/// "NON-COMMERCIAL" / "PERSONAL USE" badge next to a voice.
+/// "NON-COMMERCIAL" / "PERSONAL USE" chip next to a voice.
 struct BookLicenseBadge: View {
     let text: String
     var help: String
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.orange)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .overlay { Capsule().strokeBorder(Color.orange.opacity(0.7)) }
+        Chip(text: text, systemImage: "exclamationmark.shield.fill", tint: Theme.highlight)
+            .fixedSize()
             .help(help)
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(help)
     }
 }
 
-/// The book cover written by `inspect --cover-out`, loaded off the main thread, or a placeholder.
+/// The book cover written by `inspect --cover-out`, or a placeholder. The book screen loads the image once
+/// (`BookCoverView.load`) because the hero backdrop behind the header uses it too.
 struct BookCoverView: View {
     let url: URL?
     let title: String
-    @State private var image: NSImage?
+    /// The loaded cover (nil while loading, or when the book has none).
+    let image: NSImage?
+    var width: CGFloat = 176
+
+    private let radius: CGFloat = 12
 
     var body: some View {
         Group {
@@ -172,26 +160,32 @@ struct BookCoverView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .shadow(color: Color(nsColor: .shadowColor).opacity(0.3), radius: 4, y: 2)
-            } else {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .quaternaryLabelColor))
+                    .clipShape(.smooth(radius))
                     .overlay {
-                        VStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: radius, style: .continuous)
+                            .strokeBorder(Theme.hairline)
+                    }
+                    .shadow(color: Color(nsColor: .shadowColor).opacity(0.28), radius: 18, y: 10)
+            } else {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(LinearGradient(colors: [Theme.accent.opacity(0.22), Theme.accent.opacity(0.07)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .overlay {
+                        VStack(spacing: Theme.Space.s) {
                             Image(systemName: "book.closed")
-                                .font(.system(size: 34))
+                                .font(.system(size: 40))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(Theme.accentForeground)
                             Text(url == nil ? "No cover" : "Loading cover…")
                                 .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
-                        .foregroundStyle(.secondary)
                     }
                     .aspectRatio(2 / 3, contentMode: .fit)
             }
         }
-        .frame(width: 140)
-        .frame(maxHeight: 220)
-        .task(id: url) { image = await BookCoverView.load(url) }
+        .frame(width: width)
+        .frame(maxHeight: width * 1.6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(image == nil ? "No cover image" : "Cover of \(title)")
     }
@@ -214,10 +208,14 @@ struct BookLicenseSheet: View {
     @State private var understood = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label("\(engine.name) is for non-commercial use only", systemImage: "exclamationmark.shield")
-                .font(.title3.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
+        VStack(alignment: .leading, spacing: Theme.Space.l) {
+            HStack(alignment: .center, spacing: Theme.Space.m) {
+                IconBadge(systemImage: "exclamationmark.shield", tint: Theme.highlight, size: 40)
+                Text("\(engine.name) is for non-commercial use only")
+                    .font(.title3.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
             Text("Its licence (\(engine.license)) allows non-commercial use only. Audio you make with it must not be used commercially, for example sold or used in a paid product.")
                 .fixedSize(horizontal: false, vertical: true)
             if let notes = engine.notes, !notes.isEmpty {
@@ -228,6 +226,9 @@ struct BookLicenseSheet: View {
             Toggle("I understand and will use \(engine.name) for non-commercial purposes only", isOn: $understood)
                 .toggleStyle(.checkbox)
                 .accessibilityLabel("I understand and will use \(engine.name) for non-commercial purposes only")
+                .padding(Theme.Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .insetSurface(radius: Theme.Radius.control)
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
@@ -242,8 +243,9 @@ struct BookLicenseSheet: View {
                 .disabled(!understood)
                 .accessibilityLabel("Acknowledge the licence and continue")
             }
+            .controlSize(.large)
         }
-        .padding(24)
+        .padding(Theme.Space.xl)
         .frame(width: 480)
     }
 }

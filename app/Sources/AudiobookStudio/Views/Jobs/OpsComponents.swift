@@ -1,16 +1,16 @@
 import SwiftUI
 
 // Small views shared by the Jobs, Job detail, Models, Benchmark and Settings screens.
-// System colours and materials only, so they follow light and dark mode.
+// Built on the design system (Design/Theme.swift, Design/Components.swift), so they follow light and dark mode.
 
 /// Colours for job states.
 enum OpsStyle {
     static func tint(for state: JobState) -> Color {
         switch state {
-        case .queued, .running: return .accentColor
-        case .done: return .green
-        case .doneWithProblems: return .orange
-        case .failed: return .red
+        case .queued, .running: return Theme.accent
+        case .done: return Theme.success
+        case .doneWithProblems: return Theme.warning
+        case .failed: return Theme.danger
         case .cancelled, .interrupted, .unknown: return .secondary
         }
     }
@@ -28,14 +28,12 @@ struct OpsErrorBox: View {
         self.onDismiss = onDismiss
     }
 
-    private var tint: Color { error.isDiskSpace ? .red : .orange }
+    private var tint: Color { error.isDiskSpace ? Theme.danger : Theme.warning }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: error.isDiskSpace ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(tint)
-                    .accessibilityHidden(true)
+        OpsTintedBox(systemImage: error.isDiskSpace ? "externaldrive.badge.exclamationmark" : "exclamationmark.triangle.fill",
+                     tint: tint) {
+            HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
                 VStack(alignment: .leading, spacing: 2) {
                     if error.isDiskSpace {
                         Text("Not enough disk space").font(.headline)
@@ -50,6 +48,8 @@ struct OpsErrorBox: View {
                         onDismiss()
                     } label: {
                         Image(systemName: "xmark")
+                            .font(.callout.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Dismiss this message")
@@ -63,15 +63,16 @@ struct OpsErrorBox: View {
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(Theme.Space.s)
                     }
                     .frame(maxHeight: 160)
+                    .insetSurface(radius: Theme.Radius.control)
+                    .padding(.top, Theme.Space.xs)
                 }
+                .font(.callout)
                 .accessibilityLabel("Engine log details")
             }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .contain)
     }
 }
@@ -83,41 +84,53 @@ struct OpsNotice: View {
     var tint: Color = .secondary
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: systemImage)
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
+        OpsTintedBox(systemImage: systemImage, tint: tint) {
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            Spacer(minLength: 0)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Licence name plus a "NON-COMMERCIAL" badge for personal-use-only models.
+/// The soft tinted box behind OpsErrorBox and OpsNotice: InlineBanner's layout, padding and fill, without
+/// its outline (InlineBanner is not meant for errors next to a control, and the design asks for almost no
+/// strokes).
+private struct OpsTintedBox<Content: View>: View {
+    let systemImage: String
+    let tint: Color
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
+            Image(systemName: systemImage)
+                // Like InlineBanner: an accent tint (engine notices) would be hard to read in dark mode.
+                .foregroundStyle(ReadableForeground(tint))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(Theme.Space.m + 2)
+        .background(tint.opacity(0.11), in: .smooth(Theme.Radius.tile))
+    }
+}
+
+/// Licence name plus a "NON-COMMERCIAL" badge for personal-use-only models. The two chips wrap onto
+/// two lines when the row is narrow; a licence name too long for the line shows in full on hover.
 struct OpsLicenseBadge: View {
     let license: String?
     let noncommercial: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        JobsFlowLayout(spacing: 6, lineSpacing: Theme.Space.xs) {
             if let license, !license.isEmpty {
-                Text(license)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Chip(text: license, tint: .secondary)
+                    .help(license)
             }
             if noncommercial {
-                Text("NON-COMMERCIAL")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
+                Chip(text: "NON-COMMERCIAL", tint: Theme.warning)
                     .help("Licensed for personal, non-commercial use only")
             }
         }
@@ -131,44 +144,33 @@ struct OpsLicenseBadge: View {
     }
 }
 
-/// Job state as a coloured label.
+/// Job state as a coloured capsule with the state's symbol.
 struct OpsStateBadge: View {
     let state: JobState
 
     var body: some View {
-        Label(state.title, systemImage: state.systemImage)
-            .font(.callout.weight(.medium))
-            .foregroundStyle(OpsStyle.tint(for: state))
+        Chip(text: state.title, systemImage: state.systemImage, tint: OpsStyle.tint(for: state))
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel("State: \(state.title)")
     }
 }
 
-/// A grid of labelled figures (job result, benchmark result).
+/// A grid of labelled figures (job result, benchmark result) as stat tiles; tiles in a row share its height.
 struct OpsFigureGrid: View {
     let items: [JobSummaryItem]
     var minWidth: CGFloat = 150
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: minWidth), alignment: .topLeading)], alignment: .leading, spacing: 12) {
+        JobsTileGrid(minColumnWidth: minWidth) {
             ForEach(items) { item in
-                VStack(alignment: .leading, spacing: 2) {
-                    Label(item.label, systemImage: item.systemImage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(item.value)
-                        .font(.title3.weight(.semibold))
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(item.label): \(item.value)")
+                // Reads as "label: value" to VoiceOver.
+                JobsStatTile(label: item.label, value: item.value, systemImage: item.systemImage)
             }
         }
     }
 }
 
-/// A titled card used to group parts of a screen.
+/// A titled card used to group parts of a screen (a solid surface card).
 struct OpsCard<Content: View>: View {
     let title: String?
     @ViewBuilder var content: Content
@@ -179,17 +181,8 @@ struct OpsCard<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title {
-                Text(title)
-                    .font(.headline)
-                    .accessibilityAddTraits(.isHeader)
-            }
+        SurfaceCard(title) {
             content
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.separator))
     }
 }
