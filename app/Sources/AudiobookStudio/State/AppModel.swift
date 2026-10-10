@@ -134,6 +134,17 @@ final class AppModel {
     /// Voices screen state that outlives the view (filters, previews, A/B comparison).
     let voiceLab = VoiceLab()
 
+    /// Runs the engine installer to update an engine that is older than this app needs (AppModel+EngineUpdate).
+    let engineUpdater = EngineInstaller()
+    /// Why the last engine update failed (cleared by the next attempt).
+    var engineUpdateError: EngineError?
+    /// The engine location the app installs to and may update (tests point it elsewhere).
+    @ObservationIgnored var managedEnginePath = EngineClient.managedPath
+    /// Automatic updates on: the engine is then updated silently too (tests replace it).
+    @ObservationIgnored var automaticUpdates: () -> Bool = { AppModel.automaticUpdatesEnabled() }
+    /// The installer an engine update runs; nil uses `EngineInstaller.scriptURL()` (tests use a stub).
+    @ObservationIgnored var engineInstallerScript: URL?
+
     /// Options for new job monitors (tests use `.testing`).
     @ObservationIgnored var monitorOptions = JobMonitor.Options()
     /// Per-launch temporary folder for covers and samples.
@@ -175,6 +186,7 @@ final class AppModel {
         await refreshAll()
         reattachRunningJobs()
         openSetupIfNeeded()
+        autoUpdateEngineIfNeeded()
     }
 
     /// True when the engine cannot be reached because it is not installed.
@@ -638,6 +650,7 @@ final class AppModel {
         await refreshJobs()
         await refreshEngines()  // a finished conversion updates the measured speeds
         await refreshCache()
+        autoUpdateEngineIfNeeded()   // an engine update waiting for this conversion can run now
     }
 
     // MARK: - Models

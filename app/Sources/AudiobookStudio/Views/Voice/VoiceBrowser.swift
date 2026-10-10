@@ -249,6 +249,7 @@ private struct VoiceOptionRow: View {
             if option.isReference && option.installed {
                 if option.kind == .userClip {
                     Button("Change Recording…") { changingRecording = true }
+                        .disabled(model.engineNeedsUpdate)
                     Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
                 } else {
                     Button("Remove Download") { remove() }
@@ -464,8 +465,10 @@ private struct VoiceReferenceDetails: View {
                         Button("Change Recording…") { changingRecording = true }
                             .voiceCapsuleButton()
                             .controlSize(.small)
-                            .disabled(busy)
-                            .help("Choose a new recording, or clean up the current one again, without deleting the voice")
+                            .disabled(busy || model.engineNeedsUpdate)
+                            .help(model.engineNeedsUpdate
+                                  ? "Needs the voice engine update (see the top of the window)"
+                                  : "Choose a new recording, or clean up the current one again, without deleting the voice")
                             .accessibilityLabel("Change the recording of \(entry.name)")
                         Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
                             .voiceCapsuleButton()

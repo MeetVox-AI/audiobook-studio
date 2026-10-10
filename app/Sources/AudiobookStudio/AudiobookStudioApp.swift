@@ -16,6 +16,7 @@ struct AudiobookStudioApp: App {
         WindowGroup("Audiobook Studio", id: AppDelegate.mainWindowID) {
             RootView()
                 .environment(appDelegate.model)
+                .environment(appDelegate.updater)
         }
         .commands {
             CommandGroup(replacing: .newItem) {

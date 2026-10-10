@@ -240,10 +240,19 @@ struct VoiceCleanupOptions: View {
         VoiceSheetGroup {
             Text("Clean up the recording")
                 .font(.headline)
-            box($isolate, model: OpsModelInfo.voiceIsolationModel,
-                detail: "Removes background noise and music, keeps the voice. DeepFilterNet3 · MIT.")
-            box($enhance, model: OpsModelInfo.voiceEnhancerModel,
-                detail: "Restores clear, studio-like speech. MossFormer2-SE · Apache-2.0. Slower.")
+            Group {
+                box($isolate, model: OpsModelInfo.voiceIsolationModel,
+                    detail: "Removes background noise and music, keeps the voice. DeepFilterNet3 · MIT.")
+                box($enhance, model: OpsModelInfo.voiceEnhancerModel,
+                    detail: "Restores clear, studio-like speech. MossFormer2-SE · Apache-2.0. Slower.")
+            }
+            .disabled(model.engineNeedsUpdate)
+            if model.engineNeedsUpdate {
+                Label("Needs the voice engine update (see the top of the window).", systemImage: "arrow.down.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

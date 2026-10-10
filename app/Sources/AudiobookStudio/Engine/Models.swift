@@ -153,6 +153,8 @@ struct MeasuredRate: Hashable, Identifiable, Sendable {
 struct EngineList: Codable, Sendable {
     var engines: [EngineInfo]
     var measured: [String: SpeedMeasurement]   // key: "<engine>|<voice>"
+    /// What the engine can do (`audiobook_engine.API_VERSION`); nil for engines from before 0.3.4, which count as 1.
+    var api: Int?
 
     /// Best known characters/second for an engine, preferring the exact voice; otherwise the median of the
     /// engine's measured voices (the mean of the two middle ones for an even count), the same number as the

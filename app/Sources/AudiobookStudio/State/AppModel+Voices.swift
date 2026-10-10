@@ -532,6 +532,11 @@ final class VoiceLab {
 
     func setComparison(_ comparison: VoiceComparison?) { self.comparison = comparison }
 
+    /// Stops every preview that is still running (before the engine is replaced by an update).
+    func cancelRunning() {
+        for run in previews.values where run.isRunning { run.cancel() }
+    }
+
     /// Stops and drops the previews made with one reference voice (its recording changed), and the comparison
     /// that shows one of them.
     func forgetPreviews(refVoiceId: String) {

@@ -32,9 +32,12 @@ struct EngineClient: Sendable {
     static var defaultPath: String {
         if ProcessInfo.processInfo.environment["AUDIOBOOK_PREFIX"] == nil,
            let p = Bundle.main.object(forInfoDictionaryKey: "AudiobookEnginePath") as? String, !p.isEmpty { return p }
-        // Where scripts/install-engine.sh puts the engine for people who installed the app from the DMG.
-        return installPrefix + "/source/engine/.venv/bin/audiobook-engine"
+        return managedPath
     }
+
+    /// Where scripts/install-engine.sh puts the engine for people who installed the app from the DMG. Only an
+    /// engine there is updated by the app (a development checkout or a chosen location is the user's own).
+    static var managedPath: String { installPrefix + "/source/engine/.venv/bin/audiobook-engine" }
 
     init(path: String) { executable = URL(fileURLWithPath: path) }
 
