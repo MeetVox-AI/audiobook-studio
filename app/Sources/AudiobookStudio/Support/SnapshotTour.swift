@@ -36,22 +36,32 @@ enum SnapshotTour {
             model.settings.acceptTerms()
             try? await Task.sleep(for: .seconds(1))
         }
-        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=1: the first-run setup, step by step, in both appearances.
+        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=1: the first-run setup as on a fresh Mac (no models installed), for two language
+        // choices, in both appearances; then the tour ends.
         if ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP"] == "1", external {
+            model.preload(models: [])
             model.setup.present()
             try? await Task.sleep(for: .seconds(2))
-            for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-                NSApp.appearance = NSAppearance(named: appearance)
-                for (name, step) in [("welcome", SetupStep.welcome), ("languages", .languages), ("models", .models), ("review", .review)] {
-                    model.setup.step = step
-                    try? await Task.sleep(for: .seconds(1.5))
-                    let file = dir.appendingPathComponent("setup-\(name)-\(appearanceName).png")
-                    if await snap(to: file) { shots.append(file.lastPathComponent) }
+            let scenarios: [(String, [String])] = [("en", []), ("nlru", ["nl", "ru"]), ("hi", ["hi"])]
+            for (scenario, toggles) in scenarios {
+                for code in toggles { model.setup.toggleLanguage(code) }
+                for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                    NSApp.appearance = NSAppearance(named: appearance)
+                    for (name, step) in [("languages", SetupStep.languages), ("models", .models), ("review", .review)] {
+                        model.setup.step = step
+                        try? await Task.sleep(for: .seconds(1.5))
+                        let file = dir.appendingPathComponent("setup-\(scenario)-\(name)-\(appearanceName).png")
+                        if await snap(to: file) { shots.append(file.lastPathComponent) }
+                    }
                 }
+                if scenario == "nlru" { for code in toggles { model.setup.toggleLanguage(code) } }
             }
-            model.setup.step = .welcome
-            model.setup.dismiss()
-            try? await Task.sleep(for: .seconds(1))
+            report["screens"] = shots
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: dir.appendingPathComponent("report.json"))
+            }
+            NSApp.terminate(nil)
+            return
         }
         // The empty "New audiobook" screen, before any book is opened.
         model.selection = .newBook

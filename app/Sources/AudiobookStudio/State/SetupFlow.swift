@@ -4,27 +4,68 @@ import Foundation
 /// cannot be asked yet: the engine is what the setup installs.
 struct SetupModelChoice: Identifiable, Hashable, Sendable {
     var id: String
+    /// What the person picks: a tier ("Quick", "High quality", "Very high quality") or, for the other options, the model.
     var title: String
+    /// The exact model ("Kokoro 82M").
+    var modelName: String
+    /// Who makes it.
+    var maker: String
     var detail: String
     var gb: Double
+    /// The licence's name ("Apache-2.0").
+    var licenseName: String
     var noncommercial = false
+    /// "About 14-18x faster than listening", measured on an Apple M4 Pro; nil for the quality check.
+    var speed: String?
+    /// "A 10-hour book takes about 40 minutes."
+    var bookTime: String?
     /// Name in the progress list (defaults to the title).
     var listTitle: String?
+
+    /// "Free for any use" or "Personal use only".
+    var licenseSummary: String { noncommercial ? SetupCatalog.personalUseOnly : SetupCatalog.freeForAnyUse }
 }
 
 enum SetupCatalog {
-    static let narration: [SetupModelChoice] = [
-        SetupModelChoice(id: "kokoro", title: "Fast", detail: "Natural and very quick, a good start for any book. Small download.", gb: 0.35, listTitle: "Fast voice (Kokoro)"),
-        SetupModelChoice(id: "qwen3", title: "Best quality", detail: "The most expressive narration, and it can clone a voice. French is spoken through voice cloning.", gb: 6.2, listTitle: "Best-quality voice (Qwen3-TTS)"),
+    static let freeForAnyUse = "Free for any use"
+    static let personalUseOnly = "Personal use only"
+
+    /// The three tiers, from the smallest to the largest download.
+    static let tiers: [SetupModelChoice] = [
+        SetupModelChoice(id: "kokoro", title: "Quick", modelName: "Kokoro 82M", maker: "hexgrad",
+                         detail: "Good for drafts and short tests. English is very good; the other languages are draft quality.",
+                         gb: 0.35, licenseName: "Apache-2.0",
+                         speed: "About 14-18x faster than listening", bookTime: "A 10-hour book takes about 40 minutes.",
+                         listTitle: "Quick (Kokoro 82M)"),
+        SetupModelChoice(id: "qwen3", title: "High quality", modelName: "Qwen3-TTS 1.7B", maker: "Qwen (Alibaba)",
+                         detail: "Expressive narration in ten languages. It can clone a voice from a short clip.",
+                         gb: 6.2, licenseName: "Apache-2.0",
+                         speed: "About 3-5x faster than listening with its preset voices, about 2.4x when cloning a voice",
+                         bookTime: "A 10-hour book takes about 2-4 hours.",
+                         listTitle: "High quality (Qwen3-TTS 1.7B)"),
+        SetupModelChoice(id: "fish", title: "Very high quality", modelName: "Fish Audio S2 Pro", maker: "Fish Audio",
+                         detail: "The most realistic cloned voice. It speaks English and French only.",
+                         gb: 6.7, licenseName: "Fish Audio Research Licence", noncommercial: true,
+                         speed: "Slower than listening (about 0.56x)", bookTime: "A 10-hour book takes about 18 hours.",
+                         listTitle: "Very high quality (Fish Audio S2 Pro)"),
     ]
-    static let quality = SetupModelChoice(id: "whisper", title: "Quality check",
-                                          detail: "Listens to each chapter afterwards to catch skipped or garbled words. Also transcribes your own voice clips.", gb: 1.6)
-    /// Personal-use only licences: shown under "More voices".
-    static let more: [SetupModelChoice] = [
-        SetupModelChoice(id: "voxtral", title: "Voxtral", detail: "Lively, expressive narration.", gb: 2.5, noncommercial: true),
-        SetupModelChoice(id: "fish", title: "Fish Audio S2 Pro", detail: "Highly realistic, the largest model.", gb: 6.7, noncommercial: true),
+    static let quality = SetupModelChoice(id: "whisper", title: "Quality check", modelName: "Whisper large-v3-turbo", maker: "OpenAI",
+                                          detail: "Listens back to every chapter to catch skipped or garbled words. It adds about 15% to the time, and it also transcribes your own voice clips.",
+                                          gb: 1.6, licenseName: "MIT", listTitle: "Quality check (Whisper large-v3-turbo)")
+    /// Not one of the three tiers: a non-commercial model that also narrates Dutch and Arabic.
+    static let other: [SetupModelChoice] = [
+        SetupModelChoice(id: "voxtral", title: "Voxtral 4B", modelName: "Voxtral 4B", maker: "Mistral AI",
+                         detail: "Native voices in nine languages. This is the way to narrate Dutch and Arabic.",
+                         gb: 2.5, licenseName: "CC BY-NC 4.0", noncommercial: true,
+                         speed: "About 1.7-1.9x faster than listening", bookTime: nil,
+                         listTitle: "Voxtral 4B"),
     ]
-    static let all = narration + [quality] + more
+    static let all = tiers + [quality] + other
+    static let benchmarkNote = "Times are for a 10-hour book, measured on an Apple M4 Pro. Yours will differ; the app measures your Mac."
+    static let rightsNote = "Audiobooks made from books you do not hold the rights to are for personal use only."
+    static let freeLicenceMeaning = "Free for any use (Apache-2.0, MIT): make audiobooks for any purpose, including selling them."
+    static let personalLicenceMeaning = "Personal use only (non-commercial licences): make audiobooks for yourself. Do not sell them or use them for business."
+    static let acknowledgement = "I understand these voices are for personal use only"
     /// Which narration engines speak which languages. A mirror of the engine's specs (the engine does not exist yet
     /// at this step, so `languages list` cannot be asked); `SetupTests` compares it with the engine fixtures so a
     /// drift is noticed. Whisper is not a narrator and is not listed.
@@ -34,9 +75,10 @@ enum SetupCatalog {
         "voxtral": ["en", "fr", "es", "de", "it", "pt", "nl", "hi", "ar"],
         "fish": ["en", "fr"],
     ]
-    /// Names used in sentences ("Russian needs Best quality (Qwen3-TTS)").
+    /// Names used in sentences ("Russian needs High quality (Qwen3-TTS 1.7B)").
     static let engineNames: [String: String] = [
-        "kokoro": "Fast (Kokoro)", "qwen3": "Best quality (Qwen3-TTS)", "voxtral": "Voxtral", "fish": "Fish Audio S2 Pro",
+        "kokoro": "Quick (Kokoro 82M)", "qwen3": "High quality (Qwen3-TTS 1.7B)", "voxtral": "Voxtral 4B",
+        "fish": "Very high quality (Fish Audio S2 Pro)",
     ]
     /// Rough download of one language's reference voices, in MB (only an estimate: the engine reports the real size).
     static let voiceMBPerLanguage = 3.0
@@ -76,7 +118,62 @@ enum SetupCatalog {
         return best?.ids ?? []
     }
 
-    /// "Russian needs Best quality (Qwen3-TTS); add it here or later in Models."
+    /// Which engine is picked first when several could narrate a language (a default, never a lock).
+    static let preference = ["qwen3", "kokoro", "voxtral", "fish"]
+
+    /// The narration engines that speak `code`, in preference order.
+    static func candidates(for code: String) -> [String] {
+        preference.filter { engineLanguages[$0]?.contains(code) == true }
+    }
+
+    /// Every narration engine speaks it: no engine is needed for it in particular (English, French).
+    static func isOpen(_ code: String) -> Bool { candidates(for: code).count == preference.count }
+
+    /// The engines to add to `have` so that every language in `languages` has a narrator. A language only one
+    /// engine speaks forces that engine (Dutch, Arabic: Voxtral; Russian, Chinese, Japanese, Korean: Qwen3-TTS);
+    /// any other gets its first candidate in `preference` order, unless an engine already added or in `have` speaks it.
+    static func required(languages: Set<String>, have: Set<String>) -> [String] {
+        var engines = have
+        var added: [String] = []
+        let ordered = LanguageRegistry.codes.filter(languages.contains)
+        func covered(_ code: String) -> Bool { engines.contains { engineLanguages[$0]?.contains(code) == true } }
+        for pass in 0..<2 {
+            for code in ordered where !covered(code) {
+                let options = candidates(for: code)
+                guard let pick = options.first, pass == 1 || options.count == 1 else { continue }
+                engines.insert(pick)
+                added.append(pick)
+            }
+        }
+        return added
+    }
+
+    /// The live line on the languages step: what the selection implies, whatever is ticked later. Nothing is
+    /// alarming for languages any voice speaks.
+    static func needsSummary(languages: Set<String>, installed: Set<String>) -> String {
+        let specific = languages.filter { !isOpen($0) }
+        let needed = required(languages: specific, have: installed)
+        if needed.isEmpty {
+            let names = languageList(Array(languages))
+            return specific.isEmpty ? "Any voice quality works for \(names)."
+                                    : "Voices already on this Mac cover \(names). You can review this before anything downloads."
+        }
+        let neededSet = Set(needed)
+        var assigned: [String: [String]] = [:]
+        for code in LanguageRegistry.codes.filter(languages.contains) where !isOpen(code) {
+            if let engine = candidates(for: code).first(where: neededSet.contains) { assigned[engine, default: []].append(code) }
+        }
+        let parts = preference.filter(neededSet.contains).compactMap { id -> String? in
+            guard let choice = choice(id), let codes = assigned[id] else { return nil }
+            var facts = [sizeText(choice.gb)]
+            if choice.noncommercial { facts.append("personal use only") }
+            if id == "kokoro", codes.contains(where: { $0 != "en" }) { facts.append("draft quality") }
+            return "\(choice.modelName) (\(facts.joined(separator: ", "))) for \(languageList(codes))"
+        }
+        return "Your languages need: " + parts.joined(separator: "; ") + ". You can review this before anything downloads."
+    }
+
+    /// "Russian needs High quality (Qwen3-TTS 1.7B); add it here or later in Models."
     static func coverageMessage(uncovered: [String], suggestion: [String]) -> String? {
         guard !uncovered.isEmpty else { return nil }
         let who = languageList(uncovered)
@@ -102,6 +199,30 @@ enum SetupCatalog {
 
     /// Rough size of the tools and the Python environment the engine install adds.
     static let engineGB = 1.5
+
+    /// "3 MB", "0.35 GB", "6.2 GB": decimal units, as Finder shows them.
+    static func sizeText(_ gb: Double) -> String {
+        if gb < 0.1 { return "\(max(1, Int((gb * 1000).rounded()))) MB" }
+        return gb < 1 ? String(format: "%.2f GB", gb) : String(format: "%.1f GB", gb)
+    }
+
+    /// What is left to download, in GB: the engine tools when the engine is not installed, each chosen model that
+    /// is not on disk yet, and the reference voices of `languageCount` languages.
+    static func downloadGB(chosen: Set<String>, installed: Set<String>, engineInstalled: Bool, languageCount: Int) -> Double {
+        let models = all.filter { chosen.contains($0.id) && !installed.contains($0.id) }.reduce(0) { $0 + $1.gb }
+        return models + (engineInstalled ? 0 : engineGB) + Double(languageCount) * voiceMBPerLanguage / 1000
+    }
+
+    /// Download of the chosen narration models only (not the quality check, tools or voices).
+    static func narrationGB(chosen: Set<String>, installed: Set<String>) -> Double {
+        (tiers + other).filter { chosen.contains($0.id) && !installed.contains($0.id) }.reduce(0) { $0 + $1.gb }
+    }
+
+    /// "Not enough free space: the download needs 8.1 GB and 5 GB is free." nil when it fits.
+    static func spaceWarning(neededGB: Double, freeGB: Int) -> String? {
+        guard Double(freeGB) < neededGB else { return nil }
+        return "Not enough free space: the download needs \(sizeText(neededGB)) and \(freeGB) GB is free."
+    }
 }
 
 enum SetupStep: Int, Hashable, Sendable {
@@ -117,6 +238,8 @@ struct SetupItem: Identifiable, Hashable, Sendable {
     var title: String
     /// Share of the overall bar (about the download size in GB).
     var weight: Double
+    /// "6.2 GB" for the big downloads (shown in the progress list).
+    var sizeLabel: String?
     var state: State = .pending
     /// Why a language step did not fully work (shown under it, with a retry).
     var note: String?
@@ -149,7 +272,17 @@ final class SetupFlow {
     var languages: Set<String>
     /// The person changed the languages in this session: reopening the setup keeps their choice.
     private(set) var languagesEdited = false
-    var chosen: Set<String> = ["kokoro", "qwen3"]
+    /// What the person ticked (today's defaults count as ticked): never removed behind their back.
+    var userChosen: Set<String> = ["kokoro", "qwen3"]
+    /// Why the last untick was refused, in words for a person; cleared by the next change.
+    private(set) var notice: String?
+    /// Everything that will be downloaded or used: the person's ticks plus the engines the languages require.
+    var chosen: Set<String> {
+        get { userChosen.union(autoEngines) }
+        set { userChosen = newValue }
+    }
+    /// The non-commercial models the person has said they understand are for personal use only.
+    private(set) var acknowledgedModels: Set<String> = []
     private(set) var prerequisites = SetupPrerequisites.current()
     private(set) var items: [SetupItem] = []
     private(set) var error: EngineError?
@@ -186,12 +319,82 @@ final class SetupFlow {
     func toggleLanguage(_ code: String) {
         guard LanguageRegistry.codes.contains(code) else { return }
         languagesEdited = true
+        notice = nil
         if languages.contains(code) { if languages.count > 1 { languages.remove(code) } } else { languages.insert(code) }
     }
 
-    func toggleModel(_ id: String) {
-        if chosen.contains(id) { chosen.remove(id) } else { chosen.insert(id) }
+    /// Ticks or unticks a model. An engine that is the only narrator of a selected language cannot be unticked:
+    /// the reason is returned (and kept in `notice`) instead of failing silently.
+    @discardableResult
+    func toggleModel(_ id: String) -> String? {
+        notice = nil
+        if chosen.contains(id) {
+            if let why = lockMessage(for: id) { notice = why; return why }
+            userChosen.remove(id)
+        } else {
+            userChosen.insert(id)
+        }
+        return nil
     }
+
+    // MARK: Engines that follow from the languages
+
+    /// Narration engines on disk.
+    var installedEngines: Set<String> { installedModelIds.filter { SetupCatalog.engineLanguages[$0] != nil } }
+
+    /// Engines added because a selected language has no narrator among the ticked and installed ones.
+    var autoEngines: Set<String> {
+        let ticked = userChosen.filter { SetupCatalog.engineLanguages[$0] != nil }
+        return Set(SetupCatalog.required(languages: languages, have: ticked.union(installedEngines)))
+    }
+
+    /// Selected languages that `engine` alone narrates among the chosen and installed engines (empty when it is not chosen).
+    func lockedLanguages(_ engine: String) -> [String] {
+        guard chosen.contains(engine), let spoken = SetupCatalog.engineLanguages[engine] else { return [] }
+        let others = chosen.union(installedEngines).subtracting([engine])
+        return LanguageRegistry.codes.filter { code in
+            languages.contains(code) && spoken.contains(code)
+                && !others.contains { SetupCatalog.engineLanguages[$0]?.contains(code) == true }
+        }
+    }
+
+    /// The locked languages no other engine in the catalogue speaks at all ("Required for Dutch, Arabic").
+    func requiredLanguages(_ engine: String) -> [String] {
+        lockedLanguages(engine).filter { SetupCatalog.candidates(for: $0) == [engine] }
+    }
+
+    /// "Required for Dutch and Arabic" or "Needed for German"; nil when the engine is not holding a language up.
+    func lockLabel(_ engine: String) -> String? {
+        let required = requiredLanguages(engine)
+        if !required.isEmpty { return "Required for \(SetupCatalog.languageList(required))" }
+        let locked = lockedLanguages(engine)
+        return locked.isEmpty ? nil : "Needed for \(SetupCatalog.languageList(locked))"
+    }
+
+    func lockMessage(for engine: String) -> String? {
+        let locked = lockedLanguages(engine)
+        guard !locked.isEmpty else { return nil }
+        let name = SetupCatalog.engineNames[engine] ?? engine
+        let required = requiredLanguages(engine)
+        if !required.isEmpty {
+            return "\(SetupCatalog.languageList(required)) can only be narrated by \(name), so it stays selected while \(required.count == 1 ? "that language is" : "those languages are") on. You can change your languages in the previous step."
+        }
+        return "\(SetupCatalog.languageList(locked)) would have no voice without \(name). Select another voice that speaks \(locked.count == 1 ? "it" : "them") first, or change your languages in the previous step."
+    }
+
+    /// Draft-quality note for Quick when it is the only narrator of a language other than English.
+    var quickDraftNote: String? {
+        let drafts = lockedLanguages("kokoro").filter { $0 != "en" }
+        guard !drafts.isEmpty else { return nil }
+        var better: [String] = []
+        if drafts.allSatisfy({ SetupCatalog.engineLanguages["qwen3"]?.contains($0) == true }) { better.append("High quality") }
+        if drafts.allSatisfy({ SetupCatalog.engineLanguages["voxtral"]?.contains($0) == true }) { better.append("Voxtral 4B (under Other options)") }
+        let tail = better.isEmpty ? "" : " \(better.joined(separator: " or ")) gives better voices."
+        return "Draft quality for \(SetupCatalog.languageList(drafts)).\(tail)"
+    }
+
+    /// The live summary on the languages step.
+    var languageNeedsSummary: String { SetupCatalog.needsSummary(languages: languages, installed: installedEngines) }
 
     // MARK: Languages and engines
 
@@ -211,8 +414,17 @@ final class SetupFlow {
     /// The non-blocking note for the models and review steps; nil when every language is covered.
     var coverageNote: String? { SetupCatalog.coverageMessage(uncovered: uncoveredLanguages, suggestion: suggestedEngines) }
 
+    /// Names of the models this setup downloaded, for the last step.
+    var downloadedSummary: String {
+        let names = items.compactMap { item -> String? in
+            guard case .model = item.kind, item.state == .done else { return nil }
+            return item.title
+        }
+        return names.joined(separator: ", ")
+    }
+
     /// Accepts the suggestion with one tap.
-    func acceptSuggestion() { chosen.formUnion(suggestedEngines) }
+    func acceptSuggestion() { userChosen.formUnion(suggestedEngines) }
 
     /// Which of the selected languages an engine speaks, and which it does not.
     func coverage(of engineId: String) -> (speaks: [String], missing: [String])? {
@@ -247,10 +459,41 @@ final class SetupFlow {
         }
     }
 
-    /// Download size of what is left to fetch, in GB.
+    /// Ids of the models already on disk.
+    var installedModelIds: Set<String> { Set((model?.models ?? []).filter(\.installed).map(\.engine)) }
+
+    func isInstalled(_ id: String) -> Bool { installedModelIds.contains(id) }
+
+    /// Download size of everything left to fetch, in GB: engine tools, chosen models, quality check and voices.
     var neededGB: Double {
-        modelsToDownload.reduce(0) { $0 + $1.gb } + (engineInstalled ? 0 : SetupCatalog.engineGB)
+        SetupCatalog.downloadGB(chosen: chosen, installed: installedModelIds, engineInstalled: engineInstalled,
+                                languageCount: languagePlan.add.count)
     }
+
+    /// Download size of the chosen voice models only (tiers and other options), in GB.
+    var modelsGB: Double { SetupCatalog.narrationGB(chosen: chosen, installed: installedModelIds) }
+
+    /// "Not enough free space..." when what is left to download does not fit on this Mac.
+    var spaceWarning: String? { SetupCatalog.spaceWarning(neededGB: neededGB, freeGB: prerequisites.freeGB) }
+
+    // MARK: Licences
+
+    /// Chosen non-commercial models that will be downloaded now: the ones the person must acknowledge.
+    var modelsNeedingAcknowledgement: [SetupModelChoice] { modelsToDownload.filter(\.noncommercial) }
+
+    /// The one checkbox of the review step covers exactly the models listed beside it.
+    var licenseAcknowledged: Bool {
+        let needed = Set(modelsNeedingAcknowledgement.map(\.id))
+        return !needed.isEmpty && needed.isSubset(of: acknowledgedModels)
+    }
+
+    func setLicenseAcknowledged(_ on: Bool) {
+        let ids = Set(modelsNeedingAcknowledgement.map(\.id))
+        if on { acknowledgedModels.formUnion(ids) } else { acknowledgedModels.subtract(ids) }
+    }
+
+    /// True when Install must wait for the acknowledgement.
+    var acknowledgementPending: Bool { !modelsNeedingAcknowledgement.isEmpty && !licenseAcknowledged }
 
     /// Why the install cannot start yet, in words for a person; nil when it can.
     var blocker: String? { prerequisites.blocker(neededGB: neededGB) }
@@ -258,7 +501,7 @@ final class SetupFlow {
     /// Homebrew is missing and the engine needs it.
     var needsHomebrew: Bool { !engineInstalled && !prerequisites.homebrew }
 
-    var canInstall: Bool { !chosen.isEmpty && blocker == nil && !needsHomebrew }
+    var canInstall: Bool { !chosen.isEmpty && blocker == nil && !needsHomebrew && !acknowledgementPending }
 
     func recheckPrerequisites() { prerequisites = .current() }
 
@@ -302,6 +545,10 @@ final class SetupFlow {
 
     func start() {
         guard !isWorking, let model else { return }
+        // The acknowledgement is recorded when the downloads are started, so the licence sheet is not shown again.
+        if licenseAcknowledged {
+            for choice in modelsNeedingAcknowledgement { model.settings.acknowledgeLicense(engine: choice.id) }
+        }
         isWorking = true   // at once, so a second tap (or the banner) cannot start a second run
         task = Task { await run(model) }
     }
@@ -314,9 +561,9 @@ final class SetupFlow {
 
     private func plan() -> [SetupItem] {
         var list: [SetupItem] = []
-        if !engineInstalled { list.append(SetupItem(kind: .engine, title: "Install the voice engine", weight: SetupCatalog.engineGB)) }
+        if !engineInstalled { list.append(SetupItem(kind: .engine, title: "Voice engine tools", weight: SetupCatalog.engineGB, sizeLabel: SetupCatalog.sizeText(SetupCatalog.engineGB))) }
         for choice in SetupCatalog.all where chosen.contains(choice.id) {
-            list.append(SetupItem(kind: .model(choice.id), title: choice.listTitle ?? choice.title, weight: choice.gb))
+            list.append(SetupItem(kind: .model(choice.id), title: choice.listTitle ?? choice.title, weight: choice.gb, sizeLabel: SetupCatalog.sizeText(choice.gb)))
         }
         let languagePlan = self.languagePlan
         for code in languagePlan.add {

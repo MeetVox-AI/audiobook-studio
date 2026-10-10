@@ -82,60 +82,6 @@ private struct StepHeader: View {
     }
 }
 
-/// A selectable row: a checkmark circle, a title with detail, and a trailing size.
-private struct ChoiceRow: View {
-    let title: String
-    let detail: String
-    let trailing: String
-    var tag: String?
-    var extra: String?
-    let isOn: Bool
-    let action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: Theme.Space.m) {
-                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isOn ? AnyShapeStyle(Theme.accentForeground) : AnyShapeStyle(Color.secondary))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: Theme.Space.s) {
-                        Text(title).font(.headline)
-                        if let tag { Chip(text: tag, tint: .secondary) }
-                    }
-                    Text(detail)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let extra {
-                        Text(extra)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: Theme.Space.s)
-                Text(trailing)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            .padding(Theme.Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isOn ? Theme.accent.opacity(colorScheme == .dark ? 0.16 : 0.08) : Theme.inset, in: .smooth(Theme.Radius.tile))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
-                .strokeBorder(isOn ? Theme.accent.opacity(0.55) : Theme.hairline, lineWidth: isOn ? 1.5 : 1))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
-        .accessibilityLabel("\(title), \(trailing)")
-        .accessibilityHint(extra.map { "\(detail) \($0)" } ?? detail)
-    }
-}
-
 /// A language choice: native name, English name, a checkmark. Compact, for a grid.
 private struct LanguageCell: View {
     let code: String
@@ -243,7 +189,203 @@ private extension Footer where Leading == EmptyView {
     }
 }
 
-private func gbText(_ gb: Double) -> String { gb < 1 ? "\(Int((gb * 1000).rounded())) MB" : String(format: "%.1f GB", gb) }
+
+/// A voice model as a selectable card: tier, exact model, download size, speed, languages and licence.
+private struct ModelCard: View {
+    let choice: SetupModelChoice
+    var tag: String?
+    let installed: Bool
+    var coverage: String?
+    /// "Required for Dutch, Arabic": the card cannot be unticked while those languages are on.
+    var lock: String?
+    let isOn: Bool
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var identity: String {
+        choice.title == choice.modelName ? "by \(choice.maker)" : "Model: \(choice.modelName), by \(choice.maker)"
+    }
+
+    private var sizeValue: String { SetupCatalog.sizeText(choice.gb) }
+
+    private var licenceLine: String { "\(choice.licenseSummary). Licence: \(choice.licenseName)." }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isOn ? AnyShapeStyle(Theme.accentForeground) : AnyShapeStyle(Color.secondary))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    HStack(spacing: Theme.Space.s) {
+                        Text(choice.title).font(.headline)
+                        if let tag { Chip(text: tag, tint: .secondary) }
+                        if let lock { Chip(text: lock, systemImage: "lock.fill", tint: .secondary) }
+                    }
+                    Text(identity).font(.subheadline.weight(.medium))
+                    Text(choice.detail)
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let speed = choice.speed {
+                        Label {
+                            Text([speed + ".", choice.bookTime].compactMap { $0 }.joined(separator: " "))
+                                .fixedSize(horizontal: false, vertical: true)
+                        } icon: {
+                            Image(systemName: "speedometer")
+                        }
+                        .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let coverage {
+                        Text(coverage).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack(spacing: Theme.Space.s) {
+                        Chip(text: choice.licenseSummary, systemImage: choice.noncommercial ? "person.fill" : "checkmark.seal",
+                             tint: choice.noncommercial ? Theme.warning : Theme.success)
+                        Text(choice.licenseName).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: Theme.Space.s)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(installed ? "Installed" : sizeValue).font(.title3.weight(.semibold)).monospacedDigit()
+                    Text(installed ? "\(sizeValue) on disk" : "download").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(Theme.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isOn ? Theme.accent.opacity(colorScheme == .dark ? 0.16 : 0.08)
+                        : choice.noncommercial ? Theme.warning.opacity(0.06) : Theme.inset, in: .smooth(Theme.Radius.tile))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
+                .strokeBorder(isOn ? Theme.accent.opacity(0.55) : Theme.hairline, lineWidth: isOn ? 1.5 : 1))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? "Selected" : "Not selected")
+        .accessibilityHint(([choice.detail, coverage, lock.map { "\($0). It cannot be unselected while those languages are on." }].compactMap { $0 }).joined(separator: " "))
+    }
+
+    private var label: String {
+        var parts = [choice.title]
+        if let tag { parts.append(tag) }
+        if let lock { parts.append(lock) }
+        parts.append(choice.title == choice.modelName ? choice.modelName : "model \(choice.modelName)")
+        parts.append(installed ? "installed, \(sizeValue) on disk" : "\(sizeValue) download")
+        if let speed = choice.speed { parts.append(speed + ". " + (choice.bookTime ?? "")) }
+        parts.append(licenceLine)
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// "What the licences mean", always visible beside the cards.
+private struct LicenseExplainer: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            Text("What the licences mean").font(.subheadline.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Label(SetupCatalog.freeLicenceMeaning, systemImage: "checkmark.seal")
+            Label(SetupCatalog.personalLicenceMeaning, systemImage: "person.fill")
+            Text(SetupCatalog.rightsNote).padding(.leading, 22)
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(Theme.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .insetSurface(radius: Theme.Radius.tile)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A fixed line under "Also needed" (not a choice): an icon, a title, a note and a size.
+private struct NeededLine: View {
+    let systemImage: String
+    let title: String
+    let note: String
+    let badge: String?
+    let size: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Space.m) {
+            Image(systemName: systemImage).symbolRenderingMode(.hierarchical).font(.title3)
+                .foregroundStyle(.secondary).frame(width: 22).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: Theme.Space.s) {
+                    Text(title).font(.headline)
+                    if let badge { Chip(text: badge, tint: .secondary) }
+                }
+                Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: Theme.Space.s)
+            Text(size).font(.title3.weight(.semibold)).monospacedDigit()
+        }
+        .padding(Theme.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .insetSurface(radius: Theme.Radius.tile)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct ToolsLine: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let installed = model.setup.engineInstalled
+        NeededLine(systemImage: "gearshape.2", title: "Voice engine tools",
+                   note: "The Python environment, ffmpeg and espeak-ng that run the voices. Free software.",
+                   badge: installed ? "Installed" : "Required",
+                   size: installed ? "Installed" : "about \(SetupCatalog.sizeText(SetupCatalog.engineGB))")
+    }
+}
+
+private struct VoicesLine: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let flow = model.setup
+        let count = flow.languagePlan.add.count
+        NeededLine(systemImage: "person.wave.2", title: "Reference voices",
+                   note: "Small voice samples for your \(count == 1 ? "language" : "\(count) languages"), about \(Int(SetupCatalog.voiceMBPerLanguage)) MB each.",
+                   badge: nil, size: "about \(SetupCatalog.sizeText(flow.voicesMB / 1000))")
+    }
+}
+
+/// Stays under the cards: what is left to download, that it happens once, and the free space.
+private struct DownloadSummary: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let flow = model.setup
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                Image(systemName: "internaldrive").foregroundStyle(.secondary).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    if flow.chosen.isEmpty {
+                        Text("Choose at least one voice to continue.").font(.headline)
+                    } else if flow.neededGB <= 0 {
+                        Text("Nothing to download").font(.headline)
+                        Text("What you chose is already installed.").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Text("Total download: \(SetupCatalog.sizeText(flow.neededGB))").font(.headline).monospacedDigit()
+                        Text("One time. Works offline afterwards.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                Text("\(flow.prerequisites.freeGB) GB free on this Mac")
+                    .font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
+            .accessibilityElement(children: .combine)
+            if let warning = flow.spaceWarning {
+                InlineBanner(systemImage: "externaldrive.badge.exclamationmark", tint: Theme.warning) { Text(warning) }
+            }
+        }
+        .padding(Theme.Space.m)
+        .insetSurface(radius: Theme.Radius.tile)
+    }
+}
 
 // MARK: - Steps
 
@@ -256,8 +398,8 @@ private struct WelcomeStep: View {
                        subtitle: "Turn any EPUB or PDF into an audiobook, narrated by AI voices that run entirely on this Mac. Nothing you read leaves it.")
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 Label("Pick your languages and voices", systemImage: "globe")
-                Label("The voices download once, then work offline", systemImage: "arrow.down.circle")
-                Label("About 5 minutes on a fast connection", systemImage: "clock")
+                Label("Voice models are large, from 0.35 to 6.7 GB; you see every size first", systemImage: "arrow.down.circle")
+                Label("They download once, then work offline", systemImage: "wifi.slash")
             }
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(.secondary)
@@ -286,6 +428,10 @@ private struct LanguagesStep: View {
             .accessibilityLabel("Languages")
             Text(flow.languages.count == 1 ? "1 language selected" : "\(flow.languages.count) languages selected")
                 .font(.callout).foregroundStyle(.secondary)
+            Label(flow.languageNeedsSummary, systemImage: "waveform")
+                .font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(flow.languageNeedsSummary)
             Footer(primaryTitle: "Continue", primary: { flow.step = .models }) {
                 Button("Back") { flow.step = .welcome }.accessibilityLabel("Go back")
             }
@@ -295,52 +441,72 @@ private struct LanguagesStep: View {
 
 private struct ModelsStep: View {
     @Environment(AppModel.self) private var model
-    @State private var showMore = false
+    @State private var showOther = false
 
     var body: some View {
         let flow = model.setup
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "waveform", title: "Choose your voices",
-                       subtitle: "Nothing is downloaded until you choose it. Larger voices sound better and take longer to download and to narrate.")
-            VStack(spacing: Theme.Space.s) {
-                ForEach(SetupCatalog.narration) { choice in
-                    row(choice, tag: choice.id == "qwen3" ? "Recommended" : nil)
-                }
-                row(SetupCatalog.quality, tag: "Optional")
-                DisclosureGroup("More voices (personal use only)", isExpanded: $showMore) {
+                       subtitle: "Your languages decide which voices are needed; you can add others. Quick is good for drafts and High quality for the final version. Nothing is downloaded until you choose it and press Install on the last step.")
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    LicenseExplainer()
                     VStack(spacing: Theme.Space.s) {
-                        ForEach(SetupCatalog.more) { row($0, tag: "Non-commercial") }
+                        ForEach(SetupCatalog.tiers) { card($0, tag: $0.id == "qwen3" ? "Recommended" : nil) }
                     }
-                    .padding(.top, Theme.Space.s)
+                    Text(SetupCatalog.benchmarkNote)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Also needed").font(.headline).padding(.top, Theme.Space.xs)
+                        .accessibilityAddTraits(.isHeader)
+                    VStack(spacing: Theme.Space.s) {
+                        ToolsLine()
+                        if !flow.languagePlan.add.isEmpty { VoicesLine() }
+                        card(SetupCatalog.quality, tag: "Optional, recommended")
+                    }
+                    DisclosureGroup("Other options", isExpanded: $showOther) {
+                        VStack(spacing: Theme.Space.s) {
+                            Text("Not one of the three tiers. Use it for languages the tiers do not cover.")
+                                .font(.callout).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(SetupCatalog.other) { card($0, tag: nil) }
+                        }
+                        .padding(.top, Theme.Space.s)
+                    }
+                    .accessibilityLabel("Other options: Voxtral 4B, for personal use only")
+                    CoverageNotice()
                 }
-                .accessibilityLabel("More voices, for personal use only")
+                .padding(1)
             }
-            CoverageNotice()
-            HStack {
-                Image(systemName: "internaldrive").foregroundStyle(.secondary).accessibilityHidden(true)
-                Text(flow.chosen.isEmpty ? "Choose at least one voice to continue." : "Download size: \(gbText(flow.neededGB))")
-                    .foregroundStyle(.secondary)
+            .frame(maxHeight: 400)
+            if let notice = flow.notice {
+                InlineBanner(systemImage: "lock.fill", tint: Theme.warning) { Text(notice).fixedSize(horizontal: false, vertical: true) }
             }
-            .font(.callout)
+            DownloadSummary()
             Footer(primaryTitle: "Continue", primaryEnabled: !flow.chosen.isEmpty, primary: {
                 flow.recheckPrerequisites(); flow.step = .review
             }) {
                 Button("Back") { flow.step = .languages }.accessibilityLabel("Go back")
             }
         }
+        .onAppear { showOther = flow.chosen.contains("voxtral") }
+        .onChange(of: flow.chosen.contains("voxtral")) { _, on in if on { showOther = true } }
     }
 
-    private func row(_ choice: SetupModelChoice, tag: String?) -> some View {
-        let installed = model.models.first { $0.engine == choice.id }?.installed ?? false
-        var extra: String?
-        if let c = model.setup.coverage(of: choice.id), !model.setup.languages.isEmpty {
-            extra = c.missing.isEmpty ? "Narrates \(c.speaks.count == 1 ? "your language" : "all your languages")."
+    private func card(_ choice: SetupModelChoice, tag: String?) -> some View {
+        let flow = model.setup
+        var coverage: String?
+        if let c = flow.coverage(of: choice.id), !flow.languages.isEmpty {
+            coverage = c.missing.isEmpty ? "Narrates \(c.speaks.count == 1 ? "your language" : "all your languages")."
                 : c.speaks.isEmpty ? "Does not narrate \(SetupCatalog.languageList(c.missing))."
                 : "Narrates \(SetupCatalog.languageList(c.speaks)); not \(SetupCatalog.languageList(c.missing))."
         }
-        return ChoiceRow(title: choice.title, detail: choice.detail,
-                         trailing: installed ? "Installed" : gbText(choice.gb), tag: tag, extra: extra,
-                         isOn: model.setup.chosen.contains(choice.id)) { model.setup.toggleModel(choice.id) }
+        if choice.id == "kokoro", let draft = flow.quickDraftNote { coverage = [coverage, draft].compactMap { $0 }.joined(separator: " ") }
+        return ModelCard(choice: choice, tag: tag, installed: flow.isInstalled(choice.id), coverage: coverage,
+                         lock: flow.lockLabel(choice.id), isOn: flow.chosen.contains(choice.id)) {
+            // A refused untick explains itself on screen and to VoiceOver.
+            if let why = flow.toggleModel(choice.id) { AccessibilityNotification.Announcement(why).post() }
+        }
     }
 }
 
@@ -349,41 +515,122 @@ private struct ReviewStep: View {
 
     var body: some View {
         let flow = model.setup
+        let models = (SetupCatalog.tiers + SetupCatalog.other).filter { flow.chosen.contains($0.id) }
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "checklist", title: "Ready to set up",
-                       subtitle: "Audiobook Studio will install its voice engine and download your choices. Keep the app open; you can use the window meanwhile.")
-            VStack(alignment: .leading, spacing: Theme.Space.s) {
-                if !flow.engineInstalled { line("gearshape.2", "The voice engine and audio tools") }
-                ForEach(SetupCatalog.all.filter { flow.chosen.contains($0.id) }) { choice in
-                    let done = model.models.first { $0.engine == choice.id }?.installed ?? false
-                    line(done ? "checkmark.circle" : "arrow.down.circle", "\(choice.listTitle ?? choice.title)\(done ? " (already installed)" : "")",
-                         detail: done ? nil : gbText(choice.gb))
+                       subtitle: "Pressing Install downloads exactly this. Keep the app open; you can use the window meanwhile.")
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Space.m) {
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        if !flow.engineInstalled {
+                            line("gearshape.2", "Voice engine tools", sub: "Python environment, ffmpeg, espeak-ng", size: SetupCatalog.sizeText(SetupCatalog.engineGB))
+                        }
+                        ForEach(models) { choice in modelLine(choice, installed: flow.isInstalled(choice.id)) }
+                        if models.count > 1 || models.contains(where: { !flow.isInstalled($0.id) }) {
+                            HStack {
+                                Text("Voice models subtotal").foregroundStyle(.secondary)
+                                Spacer()
+                                Text(SetupCatalog.sizeText(flow.modelsGB)).foregroundStyle(.secondary).monospacedDigit()
+                            }
+                            .font(.callout)
+                            .accessibilityElement(children: .combine)
+                        }
+                        if flow.chosen.contains("whisper") {
+                            modelLine(SetupCatalog.quality, installed: flow.isInstalled("whisper"))
+                        }
+                        if !flow.languagePlan.add.isEmpty {
+                            line("person.wave.2", "Reference voices, \(flow.languagePlan.add.count == 1 ? "1 language" : "\(flow.languagePlan.add.count) languages")",
+                                 sub: SetupCatalog.languageList(flow.languagePlan.add), size: "about \(SetupCatalog.sizeText(flow.voicesMB / 1000))")
+                        }
+                        ForEach(flow.languagePlan.remove, id: \.self) { code in
+                            line("minus.circle", "Turn off \(Formatters.languageName(code)) and delete its voices")
+                        }
+                    }
+                    Divider()
+                    totals(flow)
+                    CoverageNotice(showAction: false)
+                    if flow.needsHomebrew { HomebrewNotice() }
+                    if let blocker = flow.blocker {
+                        InlineBanner(systemImage: "externaldrive.badge.exclamationmark", tint: Theme.danger) { Text(blocker) }
+                    }
+                    if !flow.modelsNeedingAcknowledgement.isEmpty { LicenseAcknowledgement() }
                 }
-                ForEach(flow.languagePlan.add, id: \.self) { code in
-                    line("person.wave.2", "\(Formatters.languageName(code)) reference voices", detail: "~\(Int(SetupCatalog.voiceMBPerLanguage)) MB")
-                }
-                ForEach(flow.languagePlan.remove, id: \.self) { code in
-                    line("minus.circle", "Turn off \(Formatters.languageName(code)) and delete its voices")
-                }
+                .padding(1)
             }
-            CoverageNotice(showAction: false)
-            if flow.needsHomebrew { HomebrewNotice() }
-            if let blocker = flow.blocker {
-                InlineBanner(systemImage: "externaldrive.badge.exclamationmark", tint: Theme.danger) { Text(blocker) }
-            }
+            .frame(maxHeight: 420)
             Footer(primaryTitle: "Install", primaryEnabled: flow.canInstall, primary: { flow.start() }) {
                 Button("Back") { flow.step = .models }.accessibilityLabel("Go back")
             }
         }
     }
 
-    private func line(_ image: String, _ text: String, detail: String? = nil) -> some View {
-        HStack(spacing: Theme.Space.s) {
+    private func totals(_ flow: SetupFlow) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            HStack {
+                Text(flow.neededGB > 0 ? "Total download" : "Nothing to download").font(.headline)
+                Spacer()
+                if flow.neededGB > 0 { Text(SetupCatalog.sizeText(flow.neededGB)).font(.headline).monospacedDigit() }
+            }
+            .accessibilityElement(children: .combine)
+            if flow.neededGB > 0 {
+                Text("One time. Works offline afterwards.").font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Free space on this Mac").foregroundStyle(.secondary)
+                Spacer()
+                Text("\(flow.prerequisites.freeGB) GB").foregroundStyle(.secondary).monospacedDigit()
+            }
+            .font(.callout)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func modelLine(_ choice: SetupModelChoice, installed: Bool) -> some View {
+        let name = choice.title == choice.modelName ? choice.modelName : "\(choice.title), \(choice.modelName)"
+        let licence = choice.noncommercial ? "\(SetupCatalog.personalUseOnly): \(choice.licenseName)" : "\(choice.licenseSummary): \(choice.licenseName)"
+        let why = model.setup.lockLabel(choice.id).map { ", \($0.prefix(1).lowercased() + $0.dropFirst())" } ?? ""
+        return line(installed ? "checkmark.circle" : "arrow.down.circle", name, sub: licence + why,
+                    size: installed ? "Installed, \(SetupCatalog.sizeText(choice.gb)) on disk" : SetupCatalog.sizeText(choice.gb))
+    }
+
+    private func line(_ image: String, _ text: String, sub: String? = nil, size: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Space.s) {
             Image(systemName: image).symbolRenderingMode(.hierarchical).foregroundStyle(.secondary).frame(width: 22)
                 .accessibilityHidden(true)
-            Text(text)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(text)
+                if let sub { Text(sub).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+            }
             Spacer()
-            if let detail { Text(detail).foregroundStyle(.secondary).monospacedDigit() }
+            if let size { Text(size).foregroundStyle(.secondary).monospacedDigit() }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The one acknowledgement the review step asks for when a non-commercial model will be downloaded.
+private struct LicenseAcknowledgement: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let flow = model.setup
+        InlineBanner(systemImage: "person.fill", tint: Theme.warning) {
+            Text("Personal use only").font(.headline)
+            ForEach(flow.modelsNeedingAcknowledgement) { choice in
+                let locked = flow.lockedLanguages(choice.id)
+                Text("\(choice.modelName): \(choice.licenseName), a non-commercial licence.")
+                    .fixedSize(horizontal: false, vertical: true)
+                if !locked.isEmpty {
+                    Text("\(SetupCatalog.languageList(locked)) \(locked.count == 1 ? "is" : "are") narrated by \(choice.modelName), which is for personal use only.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text("Audiobooks made with these voices are for personal use only. You may make them for yourself; you may not sell them or use them for business. \(SetupCatalog.rightsNote)")
+                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Toggle(SetupCatalog.acknowledgement, isOn: Binding(get: { flow.licenseAcknowledged }, set: { flow.setLicenseAcknowledged($0) }))
+                .toggleStyle(.checkbox)
+                .padding(.top, Theme.Space.xs)
+                .accessibilityHint("Required before Install is available")
         }
     }
 }
@@ -445,6 +692,7 @@ private struct WorkingStep: View {
                         HStack(spacing: Theme.Space.s) {
                             icon(item.state).frame(width: 22)
                             Text(item.title).foregroundStyle(item.state == .pending ? .secondary : .primary)
+                            if let size = item.sizeLabel { Spacer(); Text(size).font(.callout).foregroundStyle(.secondary).monospacedDigit() }
                         }
                         if let note = item.note {
                             Text(note).font(.caption).foregroundStyle(.secondary).padding(.leading, 30)
@@ -494,7 +742,8 @@ private struct DoneStep: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "checkmark.seal.fill", title: "You’re all set",
-                       subtitle: "Drop an EPUB or PDF on the window to make your first audiobook. Add more voices or languages any time from the sidebar.")
+                       subtitle: (model.setup.downloadedSummary.isEmpty ? "" : "Downloaded: \(model.setup.downloadedSummary). ")
+                       + "Drop an EPUB or PDF on the window to make your first audiobook. Add more voices or languages any time from the sidebar.")
             if !model.setup.languageIssues.isEmpty {
                 InlineBanner(systemImage: "exclamationmark.triangle.fill", tint: Theme.warning) {
                     Text("Some language voices need another try").font(.headline)
@@ -543,7 +792,7 @@ struct SetupBanner: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.engineMissing ? "Finish setting up to start making audiobooks" : "Download a voice to start making audiobooks")
                         .font(.callout.weight(.semibold))
-                    Text("It takes a few minutes and works offline afterwards.").font(.caption).foregroundStyle(.secondary)
+                    Text("You see every download size first. Works offline afterwards.").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Set Up…") { flow.present(from: model.engineMissing ? .welcome : .models) }
