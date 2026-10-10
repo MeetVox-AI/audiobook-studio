@@ -151,10 +151,20 @@ private struct LanguageCell: View {
                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isOn ? AnyShapeStyle(Theme.accentForeground) : AnyShapeStyle(Color.secondary))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(entry?.native ?? name).font(.headline)
-                        .environment(\.layoutDirection, entry?.rtl == true ? .rightToLeft : .leftToRight)
-                    if entry?.native != name { Text(name).font(.caption).foregroundStyle(.secondary) }
+                // Every cell is as tall as a two-line one (native name + English name). A language whose two names
+                // are the same, English, has one line: it is centred in that height so the grid stays uniform.
+                ZStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Xy").font(.headline)
+                        Text("Xy").font(.caption)
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(entry?.native ?? name).font(.headline)
+                            .environment(\.layoutDirection, entry?.rtl == true ? .rightToLeft : .leftToRight)
+                        if entry?.native != name { Text(name).font(.caption).foregroundStyle(.secondary) }
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
