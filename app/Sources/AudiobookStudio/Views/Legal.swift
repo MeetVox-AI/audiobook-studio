@@ -31,26 +31,61 @@ enum LegalText {
     ]
 
     static let acceptance = "By continuing you accept these terms."
+
+    // MARK: Privacy (the full text is PRIVACY.md in the project; keep the two in step)
+
+    static let privacyTitle = "Your privacy"
+    static let privacyIntro = "The short version. The full Privacy Policy is under Settings → About."
+
+    static let privacyPoints: [(symbol: String, heading: String, body: String)] = [
+        ("lock.shield", "We collect nothing",
+         "Audiobook Studio collects, receives and shares no data about you: no accounts, no analytics, no telemetry, no tracking, no crash reports. Your books, voices and audiobooks stay on your Mac and are never sent to the developer or to anyone else."),
+        ("wifi.slash", "Works offline",
+         "Narration, voice cloning and the speech check run on your Mac with no network connection. The internet is used only to download or update software."),
+        ("arrow.down.circle", "Downloads come from other companies",
+         "When you install, add a language or a voice, or check for updates, your Mac connects directly to GitHub, Hugging Face, the Internet Archive, Homebrew and the Python Package Index. They can see your IP address and what you asked for, under their own privacy policies. The developer receives nothing and is not responsible for what they collect."),
+    ]
+
+    /// Who the app talks to, and why (the table in PRIVACY.md, section 4).
+    static let connections: [(service: String, why: String)] = [
+        ("GitHub", "Daily check for a new version and the update download; the app, the engine installer and the engine's source code"),
+        ("Hugging Face", "Voice models and some reference voices"),
+        ("Internet Archive", "Some reference voices"),
+        ("Homebrew", "The tools the engine needs (uv, ffmpeg, espeak-ng)"),
+        ("Python Package Index", "The engine's Python libraries"),
+    ]
+
+    static let privacyAcceptance = "By choosing “I Agree” you accept the Terms of Use and the Privacy Policy."
+    static let policyURL = URL(string: "https://github.com/antoine-debroye/audiobook-converter/blob/main/PRIVACY.md")!
 }
 
-/// The first-launch sheet. It cannot be dismissed without choosing: accept, or quit.
+/// The first-launch sheet, in two short pages: Terms of use, then Privacy. One agreement at the end covers both.
+/// It cannot be dismissed without choosing: agree, or quit.
 struct TermsSheet: View {
     let onAccept: () -> Void
+    @State private var page: Page = .terms
+
+    private enum Page { case terms, privacy }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             HStack(spacing: Theme.Space.m) {
-                IconBadge(systemImage: "checkmark.shield", size: 44)
+                IconBadge(systemImage: page == .terms ? "checkmark.shield" : "lock.shield", size: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(LegalText.title)
+                    Text(page == .terms ? LegalText.title : LegalText.privacyTitle)
                         .font(.title2.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
-                    Text(LegalText.intro)
+                    Text(page == .terms ? LegalText.intro : LegalText.privacyIntro)
                         .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 0)
+                Text(page == .terms ? "1 of 2" : "2 of 2")
+                    .font(.callout)
+                    .foregroundStyle(Theme.faint)
+                    .accessibilityLabel(page == .terms ? "Page 1 of 2" : "Page 2 of 2")
             }
-            LegalPoints()
-            Text(LegalText.acceptance)
+            LegalPoints(points: page == .terms ? LegalText.points : LegalText.privacyPoints)
+            Text(page == .terms ? LegalText.acceptance : LegalText.privacyAcceptance)
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack {
@@ -58,12 +93,24 @@ struct TermsSheet: View {
                     .buttonBorderShape(.capsule)
                     .accessibilityLabel("Quit Audiobook Studio without accepting")
                 Spacer()
-                Button("I Understand and Accept", action: onAccept)
-                    .buttonStyle(.borderedProminent)
-                    .buttonBorderShape(.capsule)
-                    .controlSize(.large)
-                    .keyboardShortcut(.defaultAction)
-                    .accessibilityLabel("Accept the terms and continue")
+                if page == .terms {
+                    Button("Next") { page = .privacy }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityLabel("Next: the privacy policy")
+                } else {
+                    Button("Back") { page = .terms }
+                        .buttonBorderShape(.capsule)
+                        .accessibilityLabel("Back to the terms of use")
+                    Button("I Agree", action: onAccept)
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityLabel("I agree to the terms of use and the privacy policy")
+                }
             }
         }
         .padding(Theme.Space.xl)
@@ -73,11 +120,13 @@ struct TermsSheet: View {
     }
 }
 
-/// The four points, as rows (used by the sheet and by Settings > About).
+/// Points as rows (used by the sheet and by Settings > About).
 struct LegalPoints: View {
+    var points: [(symbol: String, heading: String, body: String)] = LegalText.points
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
-            ForEach(Array(LegalText.points.enumerated()), id: \.offset) { _, point in
+            ForEach(Array(points.enumerated()), id: \.offset) { _, point in
                 HStack(alignment: .top, spacing: Theme.Space.m) {
                     IconBadge(systemImage: point.symbol, size: 30)
                     VStack(alignment: .leading, spacing: 3) {

@@ -49,7 +49,7 @@ final class AppSettings {
 
     /// Version of the terms of use the user accepted (0 = none). Raise `currentTermsVersion` to ask again.
     var acceptedTermsVersion: Int { didSet { save(acceptedTermsVersion, Key.terms) } }
-    static let currentTermsVersion = 1
+    static let currentTermsVersion = 2   // 2: privacy policy added
     var hasAcceptedTerms: Bool { acceptedTermsVersion >= AppSettings.currentTermsVersion }
     func acceptTerms() { acceptedTermsVersion = AppSettings.currentTermsVersion }
 

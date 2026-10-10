@@ -33,6 +33,18 @@ enum SnapshotTour {
                     }
                 }
             }
+            // Page 2 of the sheet (privacy): press "Next" the way VoiceOver would, then capture both appearances.
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && !($0 is NSPanel) }),
+               let sheet = window.attachedSheet,
+               let next = accessibilityElement(labelled: "Next: the privacy policy", in: sheet), press(next) {
+                try? await Task.sleep(for: .seconds(1))
+                for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                    NSApp.appearance = NSAppearance(named: appearance)
+                    try? await Task.sleep(for: .seconds(1))
+                    let file = dir.appendingPathComponent("privacy-\(appearanceName).png")
+                    if let sheet = window.attachedSheet, await externalCapture(to: file, window: sheet) { shots.append(file.lastPathComponent) }
+                }
+            }
             model.settings.acceptTerms()
             try? await Task.sleep(for: .seconds(1))
         }

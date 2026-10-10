@@ -140,3 +140,10 @@ private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool
     let env = EngineClient.childEnvironment([:])
     #expect(env["PATH"]!.hasPrefix("/usr/bin:/bin") && env["PATH"]!.contains("/opt/homebrew/bin"))
 }
+
+@Test func theEngineIsStartedWithTelemetryOffUnlessThePersonChoseOtherwise() {
+    let env = EngineClient.childEnvironment(["PATH": "/usr/bin"])
+    #expect(env["HF_HUB_DISABLE_TELEMETRY"] == "1" && env["DO_NOT_TRACK"] == "1")
+    let own = EngineClient.childEnvironment(["PATH": "/usr/bin", "DO_NOT_TRACK": "0"])
+    #expect(own["DO_NOT_TRACK"] == "0")
+}

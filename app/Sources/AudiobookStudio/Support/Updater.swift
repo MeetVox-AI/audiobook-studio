@@ -18,6 +18,8 @@ final class Updater {
         // The self-test tour must never reach out to the network or show update windows.
         if hasFeed && SnapshotTour.directory == nil {
             controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            // Privacy: the update check never sends a system profile (the same is set in Info.plist, SUSendProfileInfo).
+            controller?.updater.sendsSystemProfile = false
         } else {
             controller = nil
         }

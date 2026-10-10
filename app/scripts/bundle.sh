@@ -42,6 +42,7 @@ if [[ "${RELEASE:-}" == "1" ]]; then
   SPARKLE_KEYS="  <key>SUFeedURL</key><string>$FEED</string>
   <key>SUPublicEDKey</key><string>Kf1o7p4lWeAt2unbslMM1r3hoD3eeE6EPKzuojQLW0w=</string>
   <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUSendProfileInfo</key><false/>
   <key>SUAutomaticallyUpdate</key><true/>
   <key>SUScheduledCheckInterval</key><integer>86400</integer>"
   if [[ -n "${AUDIOBOOK_FEED:-}" ]]; then

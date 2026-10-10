@@ -753,7 +753,30 @@ private struct AboutSettingsTab: View {
             } header: {
                 Text("Terms of use")
             } footer: {
-                Text("You accepted these terms when you first opened the app. They apply to every use of it.")
+                Text("You accepted these terms, and the privacy policy below, when you first opened the app. They apply to every use of it.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                LegalPoints(points: LegalText.privacyPoints)
+                    .padding(.vertical, Theme.Space.xs)
+                ForEach(Array(LegalText.connections.enumerated()), id: \.offset) { _, item in
+                    LabeledContent(item.service) {
+                        Text(item.why)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                HStack {
+                    Button("Open the Full Privacy Policy") { NSWorkspace.shared.open(LegalText.policyURL) }
+                        .buttonStyle(.bordered)
+                        .buttonBorderShape(.capsule)
+                        .accessibilityLabel("Open the full privacy policy on GitHub")
+                    Spacer()
+                }
+            } header: {
+                Text("Privacy policy")
+            } footer: {
+                Text("These are the only services the app ever contacts, and only to download or update software. They are independent of the developer and have their own privacy policies.")
                     .foregroundStyle(.secondary)
             }
             Section {

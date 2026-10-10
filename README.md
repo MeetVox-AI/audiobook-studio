@@ -171,6 +171,10 @@ Remove a model with `audiobook-engine models remove <engine>`.
   MacPorts folders (apps opened from Finder do not get Homebrew on PATH). For another location, set
   `AUDIOBOOK_FFMPEG` and `AUDIOBOOK_FFPROBE` to the full paths.
 
+## Privacy
+
+**Audiobook Studio collects nothing.** No accounts, no analytics, no telemetry, no tracking, no crash reports; your books, voices and audiobooks never leave your Mac, and narration works fully offline (conversions were tested with all network access blocked). The internet is used only to download or update software, directly from GitHub, Hugging Face, the Internet Archive, Homebrew and the Python Package Index, which can see your IP address under their own privacy policies. Read the full [Privacy Policy](PRIVACY.md); the app shows a short version on first launch.
+
 ## Terms of use
 
 Use Audiobook Studio lawfully: convert only books you own or have the right to use, clone a voice only with its owner's permission, and never use it to deceive, impersonate, defraud or harm anyone or to infringe copyright or any other law. You alone are responsible for what you make and for following the licences of the models and voices you use. The app is provided "as is", without warranty; to the fullest extent the law allows, the developer is not liable for any use of the app, for anything made with it, or for any loss or damage. The app shows these terms on first launch and under Settings → About.

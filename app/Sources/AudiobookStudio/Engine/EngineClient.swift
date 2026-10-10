@@ -105,6 +105,8 @@ struct EngineClient: Sendable {
         var parts = (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(separator: ":").map(String.init)
         for folder in toolFolders where !parts.contains(folder) { parts.append(folder) }
         env["PATH"] = parts.joined(separator: ":")
+        // Privacy: no telemetry from the libraries the engine uses (a value the person set on purpose is kept).
+        for key in ["HF_HUB_DISABLE_TELEMETRY", "DO_NOT_TRACK"] where env[key] == nil { env[key] = "1" }
         return env
     }
 

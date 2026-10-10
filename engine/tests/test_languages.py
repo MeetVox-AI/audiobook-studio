@@ -157,3 +157,11 @@ def test_pipeline_passes_the_language_to_the_duration_check(tmp_path, monkeypatc
     monkeypatch.setattr(pipeline, "check_chunk", lambda *a, **k: (langs.append(k.get("lang")), real(*a, **k))[1])
     pipeline.convert(path, ConvertOptions(engine="kokoro", verify=False), lambda e: None, None)
     assert langs and set(langs) == {"en"}
+
+
+def test_importing_the_engine_turns_library_telemetry_off():
+    import os
+
+    import audiobook_engine  # noqa: F401  (sets the defaults on import)
+
+    assert os.environ.get("HF_HUB_DISABLE_TELEMETRY") == "1" and os.environ.get("DO_NOT_TRACK") == "1"

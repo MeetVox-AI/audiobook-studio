@@ -5,7 +5,8 @@
 # Environment (for testing): AUDIOBOOK_PREFIX (install folder), AUDIOBOOK_REPO (git URL or path), NO_MODELS=1.
 set -euo pipefail
 # The app runs this with a minimal PATH: make Homebrew's folders visible, and keep brew quiet and non-interactive.
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 NONINTERACTIVE=1
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 NONINTERACTIVE=1 \
+  HOMEBREW_NO_ANALYTICS=1 HF_HUB_DISABLE_TELEMETRY=1 DO_NOT_TRACK=1
 
 PREFIX="${AUDIOBOOK_PREFIX:-$HOME/Library/Application Support/AudiobookStudio}"
 REPO="${AUDIOBOOK_REPO:-https://github.com/antoine-debroye/audiobook-converter.git}"
