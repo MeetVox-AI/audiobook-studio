@@ -576,9 +576,10 @@ struct EmptyStateView<Actions: View>: View {
                     Text(message)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // A wrapped message with fixedSize inside this width cap sent the window into a layout loop that
+            // blanked the sidebar (empty Jobs). The cap alone lets the text take the height it needs.
             .frame(maxWidth: 420)
             actions
         }
