@@ -20,7 +20,7 @@
 |---|---|
 | 🔒 **Private by design** | Narration runs on your Mac's GPU with open AI voice models. After the one-time model download it works offline. Nothing is uploaded, ever. |
 | 🎧 **A real audiobook, not a long MP3** | One `.m4b` with chapter markers, cover art, title and author, normalised loudness and the audiobook tag, checked with ffprobe after every conversion, so audiobook players can show chapters and your cover. |
-| 🗣️ **Voices you can actually pick** | Four engines, English and French, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
+| 🗣️ **Voices you can actually pick** | Four engines and a growing list of languages (English, French and more), plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
 | ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
 | ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
 | 🔄 **Keeps itself up to date** | The app checks for new versions daily and installs them in the background (signed updates only). You can turn it off in Settings. |
@@ -166,7 +166,6 @@ Use Audiobook Studio lawfully: convert only books you own or have the right to u
 ## Limitations
 
 - Scanned PDFs (images without a text layer) need OCR first; they are rejected with a clear message.
-- English and French only. Other languages are detected and reported as unsupported.
 - No speaker casting (one narrator per book) in this version.
 - Kokoro's single French voice is draft quality; prefer Qwen3 with a French reference voice.
 
