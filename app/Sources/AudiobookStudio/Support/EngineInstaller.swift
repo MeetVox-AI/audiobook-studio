@@ -1,16 +1,93 @@
 import Foundation
 
+/// The result of a small read-only command run during the preflight.
+struct CommandResult: Equatable, Sendable {
+    var status: Int32
+    /// Standard output and standard error together.
+    var output: String
+}
+
+/// Runs a short command (executable path, arguments, timeout in seconds). Injected so tests never run real commands.
+typealias CommandRunner = @Sendable (_ executable: String, _ arguments: [String], _ timeout: TimeInterval) -> CommandResult
+
+enum SystemCommands {
+    /// Runs the command for real, waiting at most `timeout` seconds. A command that cannot start or times out
+    /// reports status -1.
+    static let run: CommandRunner = { executable, arguments, timeout in
+        // Inside the test bundle nothing real is ever run: a clean Mac answers.
+        if isUnderTest { return CommandResult(status: 0, output: "") }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: executable)
+        proc.arguments = arguments
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = pipe
+        proc.standardInput = FileHandle.nullDevice
+        let done = DispatchSemaphore(value: 0)
+        proc.terminationHandler = { _ in done.signal() }
+        do { try proc.run() } catch { return CommandResult(status: -1, output: error.localizedDescription) }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            proc.terminate()
+            return CommandResult(status: -1, output: "Timed out after \(Int(timeout)) seconds.")
+        }
+        let data = (try? pipe.fileHandleForReading.readToEnd()) ?? Data()
+        return CommandResult(status: proc.terminationStatus, output: String(decoding: data, as: UTF8.self))
+    }
+
+    static let isUnderTest = NSClassFromString("XCTestCase") != nil
+        || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+}
+
+/// Apple's developer tools (git comes from them): installed, and their licence accepted.
+enum DeveloperTools: Equatable, Sendable {
+    case ready
+    /// Xcode or its command line tools are installed but the licence was never accepted: git and Homebrew refuse to run.
+    case licenseNotAccepted
+    /// The command line tools are not installed.
+    case commandLineToolsMissing
+
+    /// The command people paste into Terminal to accept the licence.
+    static let acceptLicenseCommand = "sudo xcodebuild -license accept"
+
+    /// Recognises the licence and missing-tools problems in an install failure (its message and the log tail);
+    /// nil for any other failure. Case-insensitive; the licence wins when both are mentioned.
+    static func issue(message: String, logTail: String = "") -> DeveloperTools? {
+        let text = (message + "\n" + logTail).lowercased()
+        if text.contains("license"), text.contains("xcodebuild") { return .licenseNotAccepted }
+        if text.contains("xcode-select") || text.contains("command line tools") || text.contains("no developer tools") {
+            return .commandLineToolsMissing
+        }
+        return nil
+    }
+}
+
 /// What the Mac needs before the engine can be installed from inside the app.
 struct SetupPrerequisites: Equatable, Sendable {
     var appleSilicon: Bool
     var homebrew: Bool
     var freeGB: Int
+    var developerTools: DeveloperTools = .ready
+    /// The raw message of a developer-tools check that failed for an unknown reason (diagnostics only; never blocks).
+    var developerToolsNote: String?
 
     /// What people paste into Terminal when Homebrew is missing (the installer asks for their password, so the
     /// app cannot run it for them).
     static let homebrewCommand = #"/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)""#
 
-    static func current() -> SetupPrerequisites {
+    /// Checks the developer tools without ever showing a system dialog: `xcode-select -p` first (git is not run when
+    /// the tools are missing, because Apple's git shim would offer to install them), then `git --version`.
+    static func developerToolsState(run: CommandRunner) -> (state: DeveloperTools, note: String?) {
+        guard run("/usr/bin/xcode-select", ["-p"], 5).status == 0 else { return (.commandLineToolsMissing, nil) }
+        let git = run("/usr/bin/git", ["--version"], 5)
+        if git.status == 0 { return (.ready, nil) }
+        let raw = git.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+        if lower.contains("license") || lower.contains("xcodebuild -license") { return (.licenseNotAccepted, raw) }
+        return (.ready, raw)
+    }
+
+    /// Cheap: two file checks, a disk query and (unless `checkTools` is false) two tiny commands.
+    static func current(run: CommandRunner = SystemCommands.run, checkTools: Bool = true) -> SetupPrerequisites {
         #if arch(arm64)
         let arm = true
         #else
@@ -20,7 +97,13 @@ struct SetupPrerequisites: Equatable, Sendable {
         let brew = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].contains { fm.isExecutableFile(atPath: $0) }
         let free = (try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
             .volumeAvailableCapacityForImportantUsage ?? 0
-        return SetupPrerequisites(appleSilicon: arm, homebrew: brew, freeGB: Int(free / 1_000_000_000))
+        var result = SetupPrerequisites(appleSilicon: arm, homebrew: brew, freeGB: Int(free / 1_000_000_000))
+        if checkTools {
+            let tools = developerToolsState(run: run)
+            result.developerTools = tools.state
+            result.developerToolsNote = tools.note
+        }
+        return result
     }
 
     /// The first thing in the way, in words for a person; nil when the install can start.

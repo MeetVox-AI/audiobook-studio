@@ -48,9 +48,9 @@ enum SnapshotTour {
             model.settings.acceptTerms()
             try? await Task.sleep(for: .seconds(1))
         }
-        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=1: the first-run setup as on a fresh Mac (no models installed), for two language
+        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=scenarios: the first-run setup as on a fresh Mac (no models installed), for two language
         // choices, in both appearances; then the tour ends.
-        if ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP"] == "1", external {
+        if ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP"] == "scenarios", external {
             model.preload(models: [])
             model.setup.present()
             try? await Task.sleep(for: .seconds(2))
@@ -344,6 +344,9 @@ enum SnapshotTour {
             }
         }
         NSApp.appearance = NSAppearance(named: .aqua)
+        if let name = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP_ISSUE"], !name.isEmpty {
+            await setupIssueTour(model: model, issue: name, dir: dir, shots: &shots)
+        }
         if run {
             model.setup.languages = ["en"]
             model.setup.chosen = ["kokoro"]
@@ -367,6 +370,38 @@ enum SnapshotTour {
             report["setup_models_installed"] = model.models.filter(\.installed).map(\.engine)
             report["setup_state"] = model.settings.setupState.rawValue
         }
+    }
+
+    /// AUDIOBOOK_STUDIO_SNAPSHOT_SETUP_ISSUE=license|tools|brew: forces the prerequisites to that state (test-only
+    /// override) and captures the review step; for `license` also the failure screen with the exact reported error.
+    static func setupIssueTour(model: AppModel, issue name: String, dir: URL, shots: inout [String]) async {
+        let flow = model.setup
+        var forced = flow.prerequisites
+        forced.developerTools = name == "license" ? .licenseNotAccepted : name == "tools" ? .commandLineToolsMissing : .ready
+        forced.homebrew = name != "brew"
+        flow.overridePrerequisitesForTesting(forced)
+        flow.present(from: .review)
+        // present() re-runs the real preflight; force the state again afterwards.
+        flow.overridePrerequisitesForTesting(forced)
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            try? await Task.sleep(for: .seconds(1))
+            let file = dir.appendingPathComponent("setup-issue-\(name)-review-\(appearanceName).png")
+            if await snap(to: file) { shots.append(file.lastPathComponent) }
+        }
+        guard name == "license" else { return }
+        flow.overrideErrorForTesting(EngineError(
+            message: "You have not agreed to the Xcode license. Please resolve this by running: sudo xcodebuild -license accept",
+            stderrTail: "==> Installing tools (uv, ffmpeg, espeak-ng) if missing\nYou have not agreed to the Xcode license. Please resolve this by running: sudo xcodebuild -license accept"))
+        flow.step = .working
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            try? await Task.sleep(for: .seconds(1))
+            let file = dir.appendingPathComponent("setup-issue-license-failure-\(appearanceName).png")
+            if await snap(to: file) { shots.append(file.lastPathComponent) }
+        }
+        flow.overrideErrorForTesting(nil)
+        flow.step = .review
     }
 
     static func snap(to url: URL) async -> Bool {

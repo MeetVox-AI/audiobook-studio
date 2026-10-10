@@ -549,7 +549,12 @@ private struct ReviewStep: View {
                     Divider()
                     totals(flow)
                     CoverageNotice(showAction: false)
-                    if flow.needsHomebrew { HomebrewNotice() }
+                    switch flow.firstNotice {
+                    case .commandLineTools: DeveloperToolsNotice(issue: .commandLineToolsMissing) { flow.recheckPrerequisites() }
+                    case .license: DeveloperToolsNotice(issue: .licenseNotAccepted) { flow.recheckPrerequisites() }
+                    case .homebrew: HomebrewNotice()
+                    case nil: EmptyView()
+                    }
                     if let blocker = flow.blocker {
                         InlineBanner(systemImage: "externaldrive.badge.exclamationmark", tint: Theme.danger) { Text(blocker) }
                     }
@@ -668,6 +673,87 @@ private struct HomebrewNotice: View {
     }
 }
 
+/// Apple's developer tools (git) are missing or their licence was never accepted. Neither needs a password inside
+/// the app: the person runs one line in Terminal, or Apple's own installer, then presses Check Again.
+private struct DeveloperToolsNotice: View {
+    let issue: DeveloperTools
+    var checkAgain: () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        switch issue {
+        case .licenseNotAccepted: license
+        case .commandLineToolsMissing: tools
+        case .ready: EmptyView()
+        }
+    }
+
+    private var license: some View {
+        InlineBanner(systemImage: "terminal", tint: Theme.warning) {
+            Text("One thing first: accept Apple’s licence")
+                .font(.headline)
+            Text("Apple’s developer tools need you to accept their licence once. Open the Terminal app, paste this line, press Return, type your Mac password when asked (nothing shows while you type), wait for it to finish, then come back and press Check Again.")
+                .fixedSize(horizontal: false, vertical: true)
+            Text(DeveloperTools.acceptLicenseCommand)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .padding(Theme.Space.s)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .insetSurface(radius: Theme.Radius.control)
+                .accessibilityLabel("Command to accept the licence: \(DeveloperTools.acceptLicenseCommand)")
+            Text("Audiobook Studio uses Apple’s tools (git) and Homebrew to install its audio engine; macOS blocks them until the licence is accepted.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button(copied ? "Copied" : "Copy Command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(DeveloperTools.acceptLicenseCommand, forType: .string)
+                    copied = true
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Copy the command that accepts Apple’s licence")
+                Button("Open Terminal") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Open the Terminal app")
+                checkAgainButton
+            }
+            .buttonBorderShape(.capsule)
+        }
+    }
+
+    private var tools: some View {
+        InlineBanner(systemImage: "wrench.and.screwdriver", tint: Theme.warning) {
+            Text("One thing first: Apple’s developer tools")
+                .font(.headline)
+            Text("Your Mac needs Apple’s command line developer tools (about 1 GB, from Apple). Press Install Tools; macOS shows its own installer. When it finishes, come back and press Check Again.")
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Install Tools") {
+                    let proc = Process()
+                    proc.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+                    proc.arguments = ["--install"]
+                    proc.standardOutput = FileHandle.nullDevice
+                    proc.standardError = FileHandle.nullDevice
+                    try? proc.run()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Install Apple’s command line developer tools")
+                checkAgainButton
+            }
+            .buttonBorderShape(.capsule)
+        }
+    }
+
+    private var checkAgainButton: some View {
+        Button("Check Again", action: checkAgain)
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Check again whether Apple’s developer tools are ready")
+    }
+}
+
 private struct WorkingStep: View {
     @Environment(AppModel.self) private var model
 
@@ -702,14 +788,30 @@ private struct WorkingStep: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            if let error = flow.error { OpsErrorBox(error: error) }
+            if let error = flow.error {
+                if let issue = flow.failureIssue {
+                    DeveloperToolsNotice(issue: issue) { flow.tryAgain() }
+                    DisclosureGroup("Details") {
+                        Text([error.message, error.stderrTail].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, Theme.Space.xs)
+                    }
+                    .accessibilityLabel("Technical details of the error")
+                } else {
+                    OpsErrorBox(error: error)
+                }
+            }
             HStack {
                 if flow.error != nil {
                     Button("Skip for Now") { flow.dismiss() }
                         .buttonStyle(.borderless).foregroundStyle(.secondary)
                         .accessibilityLabel("Skip the setup for now")
                     Spacer()
-                    Button("Try Again") { flow.start() }
+                    Button("Try Again") { flow.tryAgain() }
                         .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).controlSize(.large)
                         .accessibilityLabel("Try the setup again")
                 } else {
@@ -783,9 +885,10 @@ struct SetupBanner: View {
                     .accessibilityLabel("Show the setup progress")
             } else if let error = flow.error {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning).accessibilityHidden(true)
-                Text(error.message).lineLimit(2).font(.callout)
+                Text(flow.failureIssue == nil ? error.message : "Apple’s developer tools need attention before the setup can continue.")
+                    .lineLimit(2).font(.callout)
                 Spacer()
-                Button("Try Again") { flow.present(from: .working); flow.start() }
+                Button("Try Again") { flow.present(from: .working); flow.tryAgain() }
                     .accessibilityLabel("Try the setup again")
             } else {
                 Image(systemName: "sparkles").symbolRenderingMode(.hierarchical).foregroundStyle(.secondary).accessibilityHidden(true)

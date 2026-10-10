@@ -283,7 +283,10 @@ final class SetupFlow {
     }
     /// The non-commercial models the person has said they understand are for personal use only.
     private(set) var acknowledgedModels: Set<String> = []
-    private(set) var prerequisites = SetupPrerequisites.current()
+    /// Starts without the developer-tools check (no commands at construction); `present()` and the rechecks run it.
+    private(set) var prerequisites = SetupPrerequisites.current(checkTools: false)
+    /// Runs the preflight's small commands. Replaced in tests so none runs for real.
+    @ObservationIgnored var commandRunner: CommandRunner = SystemCommands.run
     private(set) var items: [SetupItem] = []
     private(set) var error: EngineError?
     private(set) var isWorking = false
@@ -299,7 +302,7 @@ final class SetupFlow {
     // MARK: Choices
 
     func present(from step: SetupStep = .welcome) {
-        prerequisites = .current()
+        recheckPrerequisites()
         if !isWorking {
             self.step = step
             if !languagesEdited { languages = initialLanguages() }
@@ -501,9 +504,49 @@ final class SetupFlow {
     /// Homebrew is missing and the engine needs it.
     var needsHomebrew: Bool { !engineInstalled && !prerequisites.homebrew }
 
-    var canInstall: Bool { !chosen.isEmpty && blocker == nil && !needsHomebrew && !acknowledgementPending }
+    /// Apple's developer tools are missing or their licence is not accepted, and the engine needs them (git, Homebrew).
+    var developerToolsIssue: DeveloperTools? {
+        guard !engineInstalled, prerequisites.developerTools != .ready else { return nil }
+        return prerequisites.developerTools
+    }
 
-    func recheckPrerequisites() { prerequisites = .current() }
+    var needsDeveloperTools: Bool { developerToolsIssue != nil }
+
+    /// The one thing to explain first on the review step: command line tools, then the licence, then Homebrew.
+    enum SetupNotice: Equatable { case commandLineTools, license, homebrew }
+    var firstNotice: SetupNotice? {
+        switch developerToolsIssue {
+        case .commandLineToolsMissing: return .commandLineTools
+        case .licenseNotAccepted: return .license
+        default: return needsHomebrew ? .homebrew : nil
+        }
+    }
+
+    var canInstall: Bool { !chosen.isEmpty && blocker == nil && !needsHomebrew && !needsDeveloperTools && !acknowledgementPending }
+
+    /// Runs the preflight again ("Check Again").
+    func recheckPrerequisites() { prerequisites = .current(run: commandRunner) }
+
+    /// Test-only: forces the prerequisites (the self-test captures each notice without a Mac in that state).
+    func overridePrerequisitesForTesting(_ value: SetupPrerequisites) { prerequisites = value }
+
+    /// Test-only: sets the failure the working step shows (the self-test captures the failure screen).
+    func overrideErrorForTesting(_ value: EngineError?) { error = value }
+
+    /// The developer-tools problem the failure screen explains instead of the raw error: what the install's error
+    /// says, unless a fresh preflight sees a different problem.
+    var failureIssue: DeveloperTools? {
+        guard let error, let fromError = DeveloperTools.issue(message: error.message, logTail: error.stderrTail) else { return nil }
+        return prerequisites.developerTools != .ready ? prerequisites.developerTools : fromError
+    }
+
+    /// "Try Again" after a failure: runs the preflight first; if the problem is still there the notice stays,
+    /// else the install is retried.
+    func tryAgain() {
+        recheckPrerequisites()
+        if failureIssue != nil, prerequisites.developerTools != .ready { return }
+        start()
+    }
 
     // MARK: Work
 

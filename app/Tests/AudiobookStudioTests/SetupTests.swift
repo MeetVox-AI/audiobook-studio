@@ -5,8 +5,27 @@ import Testing
 @MainActor
 private func makeModel() -> AppModel {
     let defaults = UserDefaults(suiteName: "setup-tests-\(UUID().uuidString)")!
-    return AppModel(settings: AppSettings(defaults: defaults))
+    let model = AppModel(settings: AppSettings(defaults: defaults))
+    model.setup.commandRunner = { _, _, _ in CommandResult(status: 0, output: "") }   // never a real command
+    return model
 }
+
+/// A fake runner that records the commands it was asked to run.
+private final class FakeCommands: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+    var select = CommandResult(status: 0, output: "/Library/Developer/CommandLineTools")
+    var git = CommandResult(status: 0, output: "git version 2.50.1")
+    var called: [String] { lock.withLock { calls } }
+    var runner: CommandRunner {
+        { [self] exe, args, _ in
+            lock.withLock { calls.append(([exe] + args).joined(separator: " ")) }
+            return exe.hasSuffix("xcode-select") ? select : git
+        }
+    }
+}
+
+private let licenseText = "You have not agreed to the Xcode license. Please resolve this by running: sudo xcodebuild -license accept"
 
 @MainActor
 @Test func languagesKeepAtLeastOne() {
@@ -603,4 +622,119 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let item = try #require(flow.items.first { $0.id == "model-kokoro" })
     #expect(item.title == "Quick (Kokoro 82M)" && item.sizeLabel == "0.35 GB")
     #expect(flow.downloadedSummary == "Quick (Kokoro 82M)")
+}
+
+
+// MARK: - Developer tools preflight
+
+@Test func preflightRecognisesTheDeveloperToolsState() {
+    let fake = FakeCommands()
+    #expect(SetupPrerequisites.developerToolsState(run: fake.runner).state == .ready)
+    #expect(fake.called == ["/usr/bin/xcode-select -p", "/usr/bin/git --version"])
+
+    let missing = FakeCommands()
+    missing.select = CommandResult(status: 2, output: "xcode-select: error: unable to get active developer directory")
+    #expect(SetupPrerequisites.developerToolsState(run: missing.runner).state == .commandLineToolsMissing)
+    #expect(missing.called == ["/usr/bin/xcode-select -p"])   // git is never run: its shim would open Apple's installer
+
+    let license = FakeCommands()
+    license.git = CommandResult(status: 69, output: licenseText)
+    let result = SetupPrerequisites.developerToolsState(run: license.runner)
+    #expect(result.state == .licenseNotAccepted && result.note == licenseText)
+
+    let other = FakeCommands()
+    other.git = CommandResult(status: 1, output: "dyld: Library not loaded")
+    let unknown = SetupPrerequisites.developerToolsState(run: other.runner)
+    #expect(unknown.state == .ready && unknown.note == "dyld: Library not loaded")   // does not block, keeps the message
+
+    let shout = FakeCommands()
+    shout.git = CommandResult(status: 69, output: "XCODEBUILD -LICENSE required")
+    #expect(SetupPrerequisites.developerToolsState(run: shout.runner).state == .licenseNotAccepted)
+}
+
+@Test func currentUsesTheInjectedRunner() {
+    let fake = FakeCommands()
+    fake.git = CommandResult(status: 69, output: licenseText)
+    #expect(SetupPrerequisites.current(run: fake.runner).developerTools == .licenseNotAccepted)
+    let skipped = FakeCommands()
+    _ = SetupPrerequisites.current(run: skipped.runner, checkTools: false)
+    #expect(skipped.called.isEmpty)
+}
+
+@MainActor
+@Test func developerToolsGateTheInstallInOrder() {
+    let model = makeModel()
+    model.settings.enginePathOverride = "/nonexistent/audiobook-engine"
+    let flow = model.setup
+    flow.chosen = ["kokoro"]
+    func set(tools: DeveloperTools, brew: Bool) {
+        flow.overridePrerequisitesForTesting(SetupPrerequisites(appleSilicon: true, homebrew: brew, freeGB: 500, developerTools: tools))
+    }
+    set(tools: .ready, brew: true)
+    #expect(flow.canInstall && flow.firstNotice == nil)
+    set(tools: .ready, brew: false)
+    #expect(!flow.canInstall && flow.firstNotice == .homebrew)
+    set(tools: .licenseNotAccepted, brew: true)
+    #expect(!flow.canInstall && flow.firstNotice == .license)
+    set(tools: .commandLineToolsMissing, brew: true)
+    #expect(!flow.canInstall && flow.firstNotice == .commandLineTools)
+    set(tools: .licenseNotAccepted, brew: false)
+    #expect(!flow.canInstall && flow.firstNotice == .license)   // the licence before Homebrew
+    set(tools: .commandLineToolsMissing, brew: false)
+    #expect(!flow.canInstall && flow.firstNotice == .commandLineTools)   // the tools before everything
+}
+
+@MainActor
+@Test func checkAgainUpdatesTheStateThroughTheRunner() {
+    let model = makeModel()
+    model.settings.enginePathOverride = "/nonexistent/audiobook-engine"
+    let flow = model.setup
+    let fake = FakeCommands()
+    fake.git = CommandResult(status: 69, output: licenseText)
+    flow.commandRunner = fake.runner
+    flow.recheckPrerequisites()
+    #expect(flow.prerequisites.developerTools == .licenseNotAccepted && flow.needsDeveloperTools)
+    fake.git = CommandResult(status: 0, output: "git version 2.50.1")   // the person accepted the licence
+    flow.recheckPrerequisites()
+    #expect(flow.prerequisites.developerTools == .ready && !flow.needsDeveloperTools)
+}
+
+@Test func installFailuresAreClassified() {
+    #expect(DeveloperTools.issue(message: licenseText) == .licenseNotAccepted)
+    #expect(DeveloperTools.issue(message: "The setup stopped before it finished.", logTail: "x\n" + licenseText) == .licenseNotAccepted)
+    #expect(DeveloperTools.issue(message: "YOU HAVE NOT AGREED TO THE XCODE LICENSE. RUN SUDO XCODEBUILD -LICENSE ACCEPT") == .licenseNotAccepted)
+    #expect(DeveloperTools.issue(message: "git is missing. Run: xcode-select --install") == .commandLineToolsMissing)
+    #expect(DeveloperTools.issue(message: "No developer tools were found") == .commandLineToolsMissing)
+    #expect(DeveloperTools.issue(message: "Install the Command Line Tools first") == .commandLineToolsMissing)
+    #expect(DeveloperTools.issue(message: "Only 3 GB free; the voice models need about 12 GB.") == nil)
+    #expect(DeveloperTools.issue(message: "Homebrew is missing.", logTail: "curl: (6) Could not resolve host") == nil)
+    #expect(DeveloperTools.issue(message: "Accept the licence", logTail: "") == nil)   // a licence of something else
+}
+
+@MainActor
+@Test func theFailureScreenExplainsTheLicenseAndTryAgainChecksFirst() async throws {
+    let model = makeModel()
+    let flow = model.setup
+    flow.overrideErrorForTesting(EngineError(message: licenseText, stderrTail: "==> Installing tools\n" + licenseText))
+    let fake = FakeCommands()
+    fake.git = CommandResult(status: 69, output: licenseText)
+    flow.commandRunner = fake.runner
+    #expect(flow.failureIssue == .licenseNotAccepted)
+
+    flow.tryAgain()   // still blocked: the preflight ran, nothing was started
+    #expect(fake.called.count == 2 && !flow.isWorking && flow.error != nil && flow.failureIssue == .licenseNotAccepted)
+
+    fake.git = CommandResult(status: 0, output: "git version 2.50.1")
+    flow.tryAgain()   // fixed: the install is retried
+    #expect(fake.called.count == 4)
+    // The retry's task cannot start before this main-actor test suspends: cancelling now stops it before any work.
+    flow.cancel()
+    await flow.waitForWork()
+
+    flow.overrideErrorForTesting(EngineError(message: "Only 3 GB free."))
+    #expect(flow.failureIssue == nil)
+}
+
+@Test func theSystemRunnerIsInertInsideTests() {
+    #expect(SystemCommands.isUnderTest)
 }
