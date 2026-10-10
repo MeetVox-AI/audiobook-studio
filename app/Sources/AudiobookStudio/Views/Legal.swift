@@ -56,7 +56,7 @@ enum LegalText {
     ]
 
     static let privacyAcceptance = "By choosing “I Agree” you accept the Terms of Use and the Privacy Policy."
-    static let policyURL = URL(string: "https://github.com/antoine-debroye/audiobook-converter/blob/main/PRIVACY.md")!
+    static let policyURL = URL(string: "https://github.com/MeetVox-AI/audiobook-studio/blob/main/PRIVACY.md")!
 }
 
 /// The first-launch sheet, in two short pages: Terms of use, then Privacy. One agreement at the end covers both.

@@ -38,7 +38,7 @@ xcrun actool "$APP_DIR/Assets/Assets.xcassets" --compile "$OUT/Contents/Resource
 # against a local server; it also allows plain-HTTP loads from the local network).
 SPARKLE_KEYS=""
 if [[ "${RELEASE:-}" == "1" ]]; then
-  FEED="${AUDIOBOOK_FEED:-https://github.com/antoine-debroye/audiobook-converter/releases/latest/download/appcast.xml}"
+  FEED="${AUDIOBOOK_FEED:-https://github.com/MeetVox-AI/audiobook-studio/releases/latest/download/appcast.xml}"
   SPARKLE_KEYS="  <key>SUFeedURL</key><string>$FEED</string>
   <key>SUPublicEDKey</key><string>Kf1o7p4lWeAt2unbslMM1r3hoD3eeE6EPKzuojQLW0w=</string>
   <key>SUEnableAutomaticChecks</key><true/>
