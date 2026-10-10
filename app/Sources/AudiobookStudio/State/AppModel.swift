@@ -657,6 +657,7 @@ final class AppModel {
 
     /// Removes an installed voice (`voices remove`). Throws EngineError.
     func removeVoice(_ id: String) async throws {
+        let removedFile = voices.first(where: { $0.id == id })?.path.map { URL(fileURLWithPath: $0) }
         busyVoiceIds.insert(id)
         defer { busyVoiceIds.remove(id) }
         do {
@@ -664,8 +665,20 @@ final class AppModel {
         } catch {
             throw EngineError(error)
         }
-        if voiceSelection?.refVoiceId == id { voiceSelection = nil }
         await refreshVoices()
+        forgetVoice(id, file: removedFile)
+    }
+
+    /// Clears every reference to a deleted voice: playback of its clip, saved per-language defaults,
+    /// and the narrator (which falls back to the default voice for the book's language).
+    func forgetVoice(_ id: String, file: URL?) {
+        if let file, player.isPlaying(file) { player.stop() }
+        for (language, saved) in settings.defaultVoices where saved.refVoiceId == id {
+            settings.defaultVoices[language] = nil
+        }
+        if voiceSelection?.refVoiceId == id {
+            voiceSelection = draft.flatMap { defaultVoice(for: $0.language) }
+        }
     }
 
     /// Replaces a voice's transcript (`voices transcript`): Whisper can mishear names, and cloning

@@ -121,3 +121,22 @@ private func eventually(timeout: Duration = .seconds(5), _ condition: () -> Bool
     _ = await consumer.result
     #expect(await eventually { !JobMonitor.isProcessAlive(enginePid) })
 }
+
+
+@Test func childEnvironmentAddsHomebrewToFinderPath() {
+    let env = EngineClient.childEnvironment(["PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": "/Users/me"])
+    let path = env["PATH"]!.split(separator: ":").map(String.init)
+    #expect(path.prefix(4) == ["/usr/bin", "/bin", "/usr/sbin", "/sbin"])  // user order kept first
+    #expect(path.contains("/opt/homebrew/bin") && path.contains("/usr/local/bin"))
+    #expect(env["HOME"] == "/Users/me")
+}
+
+@Test func childEnvironmentDoesNotDuplicateFolders() {
+    let env = EngineClient.childEnvironment(["PATH": "/opt/homebrew/bin:/usr/bin"])
+    #expect(env["PATH"]!.components(separatedBy: "/opt/homebrew/bin").count == 2)
+}
+
+@Test func childEnvironmentWithoutPathStillHasSystemAndHomebrew() {
+    let env = EngineClient.childEnvironment([:])
+    #expect(env["PATH"]!.hasPrefix("/usr/bin:/bin") && env["PATH"]!.contains("/opt/homebrew/bin"))
+}

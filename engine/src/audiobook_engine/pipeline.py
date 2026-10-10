@@ -158,6 +158,7 @@ def prepare(book_path: Path, opts: ConvertOptions) -> Prepared:
     `convert --detach` runs this in the parent too, so an invalid request is reported
     on stdout instead of dying in a detached child.
     """
+    m4b.check_tools()  # before any narration: a missing ffmpeg must not surface hours later
     book_path = Path(book_path)
     book = read_book(book_path)
     lang = resolve_lang(book, opts)
@@ -975,6 +976,7 @@ def _assemble_chapter(ready, sr, pacing, tempo, chapter_path: Path, manifest_pat
 
 def sample(book_path: Path, opts: ConvertOptions, section: int | None, seconds: float, out: Path, sink: Emit) -> dict:
     """Synthesise the first `seconds` of a section and project the full-book time."""
+    m4b.check_tools()
     book = read_book(book_path)
     lang = resolve_lang(book, opts)
     opts = replace(opts, voice=resolve_voice(opts, lang))

@@ -398,7 +398,9 @@ def voices_cmd(
             iv = voices.add_user_clip(Path(target), name or Path(target).stem, lang, transcript)
             _emit({"event": "done", **iv.to_json(), "installed": True})
         elif action == "remove":
-            _emit({"event": "done", "id": target, "removed": voices.remove(target)})
+            if not voices.remove(target):
+                _fail(f"Voice '{target}' is not installed.")
+            _emit({"event": "done", "id": target, "removed": True})
         elif action == "transcript":
             if not text:
                 _fail("Give the corrected transcript as the third argument.")
@@ -407,6 +409,8 @@ def voices_cmd(
             _fail("action must be list, download, add, remove or transcript")
     except typer.Exit:
         raise
+    except voices.VoiceInUse as exc:
+        _fail(str(exc), 1)  # already a sentence for the user
     except Exception as exc:
         _fail(f"{type(exc).__name__}: {exc}", 1)
 

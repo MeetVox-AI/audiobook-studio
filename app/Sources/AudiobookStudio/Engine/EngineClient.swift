@@ -87,6 +87,19 @@ struct EngineClient: Sendable {
         }
     }
 
+    /// Folders searched after PATH for tools the engine runs (ffmpeg, ffprobe). An app opened from Finder or
+    /// the Dock gets launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), which has no Homebrew.
+    static let toolFolders = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+
+    /// The app's environment with the tool folders appended to PATH (detached jobs inherit it too).
+    static func childEnvironment(_ base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var env = base
+        var parts = (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(separator: ":").map(String.init)
+        for folder in toolFolders where !parts.contains(folder) { parts.append(folder) }
+        env["PATH"] = parts.joined(separator: ":")
+        return env
+    }
+
     /// Raw stdout lines; stderr is collected and attached to failures.
     func rawStream(_ args: [String]) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
@@ -97,6 +110,7 @@ struct EngineClient: Sendable {
             let process = Process()
             process.executableURL = executable
             process.arguments = args
+            process.environment = EngineClient.childEnvironment()
             let stdout = Pipe(), stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr

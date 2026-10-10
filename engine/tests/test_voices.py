@@ -120,3 +120,67 @@ def test_removing_a_model_without_any_download_cache(monkeypatch):
 
     monkeypatch.setattr(huggingface_hub, "scan_cache_dir", no_cache)
     assert modelstore.remove("kokoro") == {"engine": "kokoro", "freed_bytes": 0, "removed": False}
+
+
+# --- deleting voices ------------------------------------------------------------------------
+
+def _job(job_id: str, state: str, argv: list[str], voice: str, title: str = "My Book"):
+    import os
+
+    from audiobook_engine import jobs, paths
+
+    jd = paths.jobs_dir() / job_id
+    jd.mkdir(parents=True)
+    jobs.update_state(jd, job_id=job_id, state=state, pid=os.getpid(), voice=voice, title=title, argv=argv,
+                      started="2026-10-09T10:00:00")
+    return jd
+
+
+def test_deleting_my_voice_removes_its_files_but_not_my_original(tmp_path):
+    original = clip(tmp_path / "me.wav", seed=3)
+    kept = digest(original)
+    me = voices.add_user_clip(original, "Me", "en", "Hello there, this is me.")
+    assert voices.remove(me.id) is True
+    assert voices.get(me.id) is None and not me.path.exists() and listing() == set()
+    assert original.exists() and digest(original) == kept
+
+
+def test_deleting_a_voice_that_is_narrating_a_running_job_is_refused(tmp_path):
+    me = voices.add_user_clip(clip(tmp_path / "me.wav", seed=3), "Me", "en", "Hello there, this is me.")
+    _job("j1", "running", ["convert", "/b.epub", "--engine", "qwen3", "--ref-voice", me.id], me.id, "Emma")
+    with pytest.raises(voices.VoiceInUse, match='narrating "Emma"'):
+        voices.remove(me.id)
+    assert voices.get(me.id) is not None and me.path.exists()
+
+
+def test_finished_or_dead_jobs_do_not_block_deletion(tmp_path):
+    me = voices.add_user_clip(clip(tmp_path / "me.wav", seed=3), "Me", "en", "Hello there, this is me.")
+    _job("done1", "done", ["convert", "/b.epub", "--ref-voice", me.id], me.id)
+    jd = _job("dead1", "running", ["convert", "/b.epub", "--ref-voice", me.id], me.id)
+    from audiobook_engine import jobs
+
+    jobs.update_state(jd, pid=999999)  # process is gone: reported as interrupted
+    assert voices.remove(me.id) is True
+
+
+def test_other_voices_in_running_jobs_do_not_block_deletion(tmp_path):
+    me = voices.add_user_clip(clip(tmp_path / "me.wav", seed=3), "Me", "en", "Hello there, this is me.")
+    _job("j2", "running", ["convert", "/b.epub", "--engine", "qwen3", "--ref-voice", "user-someone-else"],
+         "user-someone-else")
+    assert voices.remove(me.id) is True
+
+
+def test_cli_remove_reports_missing_and_in_use_voices_as_json_errors(tmp_path):
+    from typer.testing import CliRunner
+
+    from audiobook_engine import cli
+
+    res = CliRunner().invoke(cli.app, ["voices", "remove", "user-nobody"])
+    assert json.loads(res.stdout.strip().splitlines()[-1]) == {"event": "error", "message": "Voice 'user-nobody' is not installed."}
+    me = voices.add_user_clip(clip(tmp_path / "me.wav", seed=3), "Me", "en", "Hello there, this is me.")
+    _job("j3", "queued", ["convert", "/b.epub", f"--ref-voice={me.id}"], me.id, "Queued Book")
+    res = CliRunner().invoke(cli.app, ["voices", "remove", me.id])
+    ev = json.loads(res.stdout.strip().splitlines()[-1])
+    assert res.exit_code != 0 and ev["event"] == "error" and "Queued Book" in ev["message"]
+    assert ev["message"].startswith("This voice is narrating")  # a plain sentence, no exception name
+    assert voices.get(me.id) is not None

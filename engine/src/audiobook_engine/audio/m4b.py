@@ -13,8 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
-FFPROBE = shutil.which("ffprobe") or "ffprobe"
+from ..tools import find_tool
+
+# Resolved once: PATH first, then Homebrew/MacPorts (apps launched from Finder lack Homebrew on PATH).
+FFMPEG = find_tool("ffmpeg") or "ffmpeg"
+FFPROBE = find_tool("ffprobe") or "ffprobe"
 
 TARGET_I = -20.0   # LUFS, middle of the ACX -23..-18 window
 TARGET_TP = -3.0   # dBTP
@@ -24,8 +27,14 @@ class FFmpegError(RuntimeError):
     pass
 
 
+MISSING_MESSAGE = "ffmpeg/ffprobe not found. Install with: brew install ffmpeg"
+
+
 def _run(args: list[str]) -> subprocess.CompletedProcess:
-    proc = subprocess.run(args, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(args, capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise FFmpegError(MISSING_MESSAGE) from exc
     if proc.returncode != 0:
         tail = "\n".join(proc.stderr.strip().splitlines()[-8:])
         raise FFmpegError(f"{Path(args[0]).name} failed ({proc.returncode}): {tail}")
@@ -33,12 +42,12 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
 
 
 def check_tools() -> dict:
+    """Fail fast (before any narration) when ffmpeg/ffprobe are unusable."""
     out = {}
     for name, path in (("ffmpeg", FFMPEG), ("ffprobe", FFPROBE)):
-        p = shutil.which(path)
-        out[name] = p
+        out[name] = path if (os.path.isabs(path) and os.access(path, os.X_OK)) else shutil.which(path)
     if not out["ffmpeg"] or not out["ffprobe"]:
-        raise FFmpegError("ffmpeg/ffprobe not found. Install with: brew install ffmpeg")
+        raise FFmpegError(MISSING_MESSAGE)
     enc = _run([FFMPEG, "-hide_banner", "-encoders"]).stdout
     out["aac_encoder"] = "aac_at" if re.search(r"\baac_at\b", enc) else "aac"
     return out
@@ -121,8 +130,11 @@ def encode_m4b(chapter_files: list[Path], metadata: Path, cover: Path | None, ou
     args += ["-b:a", f"{bitrate_k}k", "-ac", "1", "-ar", "44100", "-sample_fmt", "s16" if encoder == "aac_at" else "fltp",
              "-metadata", "media_type=2", "-brand", "M4B ", "-movflags", "+faststart", "-f", "mp4", str(tmp)]
     err_tail: deque[str] = deque(maxlen=200)
-    proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding="utf-8", errors="replace")
+    try:
+        proc = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, encoding="utf-8", errors="replace")
+    except FileNotFoundError as exc:
+        raise FFmpegError(MISSING_MESSAGE) from exc
     assert proc.stdout is not None and proc.stderr is not None
     # stderr is read on its own thread: if nobody reads it, a full pipe blocks ffmpeg while
     # this thread waits on stdout, and both hang forever.

@@ -19,7 +19,7 @@ The engine works on its own from the terminal; the app is a thin front end over 
 
 ## Install
 
-Requirements: Apple Silicon Mac, macOS 15 or later, Xcode command-line tools, Homebrew, and about **12 GB free**
+Requirements: Apple Silicon Mac, macOS 26 or later (the app uses the Liquid Glass design), Xcode 26 command-line tools, Homebrew, and about **12 GB free**
 for the default models (more for the optional ones).
 
 ```bash
@@ -96,6 +96,12 @@ Downloaded models live in the Hugging Face cache (`~/.cache/huggingface`). Conve
 `~/Library/Application Support/AudiobookStudio`. Chapter files are deleted after a successful conversion;
 the sentence cache is kept so a re-run is fast. Free it with `audiobook-engine cache clear`.
 Remove a model with `audiobook-engine models remove <engine>`.
+
+## Troubleshooting
+
+- **"ffmpeg not found"**: install it with `brew install ffmpeg`. The engine looks on PATH and in the Homebrew and
+  MacPorts folders (apps opened from Finder do not get Homebrew on PATH). For another location, set
+  `AUDIOBOOK_FFMPEG` and `AUDIOBOOK_FFPROBE` to the full paths.
 
 ## Limitations
 

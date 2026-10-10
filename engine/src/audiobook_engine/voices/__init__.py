@@ -197,9 +197,40 @@ def add_user_clip(src: Path, name: str, lang: str, transcript: str | None = None
         staged.unlink(missing_ok=True)  # moved into place on success; leftovers of a failure go
 
 
+class VoiceInUse(RuntimeError):
+    """The voice is narrating a queued or running conversion."""
+
+
+def jobs_using(voice_id: str) -> list[dict]:
+    """Queued or running jobs that clone this voice (their engine reads the clip during the run)."""
+    from .. import jobs
+
+    using = []
+    for j in jobs.list_jobs():  # a job whose process died is reported as "interrupted", not running
+        if j.get("state") not in {"running", "queued"}:
+            continue
+        argv = [str(a) for a in (j.get("argv") or [])]
+        by_flag = any(a == voice_id and i > 0 and argv[i - 1] == "--ref-voice" for i, a in enumerate(argv))
+        by_flag = by_flag or f"--ref-voice={voice_id}" in argv
+        if by_flag or j.get("voice") == voice_id:
+            using.append(j)
+    return using
+
+
 def remove(voice_id: str) -> bool:
+    """Delete an installed voice (its prepared clip and metadata). The user's original file is not touched.
+
+    Refuses while a queued or running conversion uses the voice: the engine re-reads the clip
+    during the run, so deleting it would break that audiobook.
+    """
+    voice_id = _check_id(voice_id)
+    busy = jobs_using(voice_id)
+    if busy:
+        title = busy[0].get("title") or "a book"
+        raise VoiceInUse(f"This voice is narrating \"{title}\" right now. Stop that conversion or wait for it "
+                         "to finish, then delete the voice.")
     found = False
-    for p in (voices_dir() / f"{_check_id(voice_id)}.wav", _meta_path(voice_id)):
+    for p in (voices_dir() / f"{voice_id}.wav", _meta_path(voice_id)):
         if p.exists():
             p.unlink()
             found = True

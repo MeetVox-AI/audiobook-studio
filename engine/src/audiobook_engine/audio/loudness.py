@@ -26,7 +26,10 @@ class Loudness:
 def _pipe(audio: np.ndarray, sr: int, filters: str, want_audio: bool) -> tuple[bytes, str]:
     args = [FFMPEG, "-hide_banner", "-nostats", "-f", "f32le", "-ar", str(sr), "-ac", "1", "-i", "pipe:0", "-af", filters]
     args += ["-f", "f32le", "-ac", "1", "pipe:1"] if want_audio else ["-f", "null", "-"]
-    proc = subprocess.run(args, input=np.ascontiguousarray(audio, dtype="<f4").tobytes(), capture_output=True)
+    try:
+        proc = subprocess.run(args, input=np.ascontiguousarray(audio, dtype="<f4").tobytes(), capture_output=True)
+    except FileNotFoundError as exc:
+        raise FFmpegError("ffmpeg not found. Install with: brew install ffmpeg") from exc
     if proc.returncode != 0:
         raise FFmpegError("ffmpeg failed: " + proc.stderr.decode(errors="replace")[-600:])
     return proc.stdout, proc.stderr.decode(errors="replace")

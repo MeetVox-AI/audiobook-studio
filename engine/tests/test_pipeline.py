@@ -1223,3 +1223,13 @@ def test_without_a_voice_an_engine_with_no_preset_for_the_language_is_a_clear_er
         pipeline.prepare(book, ConvertOptions(engine="qwen3", verify=False))
     assert pipeline.prepare(book, ConvertOptions(engine="qwen3", voice=VoiceChoice("ryan"))).opts.voice.preset == "ryan"
     assert engine.calls == []
+
+
+def test_missing_ffmpeg_fails_before_any_narration(tmp_path, monkeypatch, engine):
+    from audiobook_engine.audio import m4b
+
+    book = make_book(tmp_path, monkeypatch)
+    monkeypatch.setattr(m4b, "FFMPEG", str(tmp_path / "no-ffmpeg"))
+    with pytest.raises(m4b.FFmpegError, match="brew install ffmpeg"):
+        run(book, opts())
+    assert engine.calls == []  # no GPU time wasted
