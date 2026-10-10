@@ -328,8 +328,9 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
 // MARK: - Add my voice and wording
 
 @Test func addVoiceFormNeedsFileNameAndConsent() {
-    var form = AddVoiceForm(language: "fr")
-    #expect(form.language == "fr" && AddVoiceForm(language: "de").language == "en")
+    var form = AddVoiceForm(language: "fr", languages: ["en", "fr"])
+    #expect(form.language == "fr" && AddVoiceForm(language: "de", languages: ["en", "fr"]).language == "en")
+    #expect(AddVoiceForm(language: "fr").language == "en")      // French is optional: not offered until it is turned on
     #expect(form.missingStep == "Choose a recording." && !form.canSubmit)
     form.chooseFile(URL(fileURLWithPath: "/clips/my_voice-take2.wav"))
     #expect(form.name == "My voice take2")

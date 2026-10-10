@@ -439,7 +439,7 @@ private struct LanguageSettingsTab: View {
                 Text("Languages")
             } footer: {
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                    Text("English and French are on by default. Any other language is added only when you choose it, here or from a book in that language.")
+                    Text("English is on by default. Any other language, French included, is added only when you choose it, here or from a book in that language.")
                     Text("The voice models are shared by every language, so a language costs only its small reference voices. Nothing is downloaded unless you choose it: models are downloaded from Models.")
                 }
                 .foregroundStyle(.secondary)

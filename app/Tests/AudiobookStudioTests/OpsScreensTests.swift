@@ -281,7 +281,7 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
     #expect(model.opsVoiceName(engine: "kokoro", voice: "zz") == "zz")
     #expect(model.opsNarration(engine: "kokoro", voice: "af_bella", language: "en") == "Kokoro 82M (fast draft) · Bella · English")
     #expect(model.opsNarration(engine: nil, voice: nil, language: "fr") == "French")
-    #expect(model.opsLanguages == ["en", "fr"])
+    #expect(model.opsLanguages == ["en"])
     #expect(model.opsModelInstalled("fish") == true && model.opsModelInstalled("nope") == nil)
 
     #expect(model.jobsInProgress.isEmpty && model.jobsFinished.count == 3)
@@ -362,7 +362,7 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
     // Before engines load there is nothing to pick.
     let empty = AppModel(settings: AppSettings(defaults: defaults))
     #expect(empty.opsBenchmarkSelection(engineId: nil, language: nil, choiceId: nil) == nil)
-    #expect(empty.opsLanguages == ["en", "fr"])
+    #expect(empty.opsLanguages == ["en"])
 }
 
 @MainActor

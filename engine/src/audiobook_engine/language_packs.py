@@ -7,7 +7,9 @@ result says which engine is needed and how large it is; this module never downlo
 Turning a language off deletes the library voices it downloaded (never the user's own clips); the shared
 models stay, because other languages use them.
 
-State: `languages.json` in the engine home folder. English and French are on by default.
+State: `languages.json` in the engine home folder. Only English is on by default; every other language,
+French included, is added on demand. A Mac that already has voices for another language when this file does
+not exist yet (an install from before languages were on demand) keeps those languages on.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from collections.abc import Callable
 
 from . import languages, paths
 
-DEFAULT_ENABLED = ("en", "fr")
+DEFAULT_ENABLED = ("en",)
 # Preference when several engines could speak a language: best quality and permissive licence first.
 _ENGINE_ORDER = ("qwen3", "kokoro", "voxtral", "fish")
 _BYTES_PER_SECOND = 48_000  # 24 kHz mono 16-bit: an estimate of a library clip's size from its duration
@@ -37,8 +39,12 @@ def enabled() -> list[str]:
         data = json.loads(_state_file().read_text(encoding="utf-8"))
         raw = data["enabled"]
         chosen = {c for c in (languages.normalize_code(x) for x in raw) if c}
+        if not chosen:
+            raise ValueError("empty")
     except Exception:
-        chosen = set(DEFAULT_ENABLED)
+        chosen = set(DEFAULT_ENABLED) | _languages_with_installed_voices()
+        if chosen != set(DEFAULT_ENABLED) and not _state_file().exists():
+            _save([c for c in languages.codes() if c in chosen])  # migrate once: they keep what they use
     return [c for c in languages.codes() if c in chosen]
 
 
@@ -46,6 +52,16 @@ def _save(codes: list[str]) -> None:
     tmp = _state_file().with_suffix(".tmp")
     tmp.write_text(json.dumps({"enabled": codes}, indent=1), encoding="utf-8")
     tmp.replace(_state_file())
+
+
+def _languages_with_installed_voices() -> set[str]:
+    """Languages of the reference voices already on this Mac (library voices or the user's own clips)."""
+    try:
+        from . import voices
+
+        return {c for c in (languages.normalize_code(v.lang) for v in voices.installed()) if c}
+    except Exception:
+        return set()
 
 
 def is_enabled(code: str) -> bool:

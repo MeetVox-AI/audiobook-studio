@@ -30,9 +30,9 @@ def fake_installed(tmp_path, ids, monkeypatch):
     monkeypatch.setattr(voices, "installed", lambda: items)
 
 
-def test_default_is_english_and_french_only():
-    assert language_packs.enabled() == ["en", "fr"]
-    assert not language_packs.is_enabled("es")
+def test_default_is_english_only_and_french_is_added_like_any_other():
+    assert language_packs.enabled() == ["en"]
+    assert not language_packs.is_enabled("es") and not language_packs.is_enabled("fr")
 
 
 def test_info_reports_engines_and_readiness():
@@ -51,12 +51,12 @@ def test_add_downloads_missing_voices_enables_and_is_idempotent(monkeypatch, tmp
     monkeypatch.setattr(voices, "download", lambda i: got.append(i))
     res = language_packs.add("es")
     assert got == ["es_test_f", "es_test_m"] and res["enabled"] and res["ready"] and res["needs"] is None
-    assert language_packs.enabled() == ["en", "fr", "es"]
+    assert language_packs.enabled() == ["en", "es"]
     fake_installed(tmp_path, ["es_test_f", "es_test_m"], monkeypatch)
     got.clear()
     language_packs.add("es")
     assert got == []                         # nothing left to download
-    assert language_packs.enabled() == ["en", "fr", "es"]
+    assert language_packs.enabled() == ["en", "es"]
 
 
 def test_add_reports_the_engine_needed_and_never_downloads_a_model(monkeypatch, tmp_path):
@@ -110,7 +110,7 @@ def test_the_last_language_cannot_be_removed():
 
 def test_a_corrupt_state_file_falls_back_to_the_defaults(tmp_path):
     (tmp_path / "languages.json").write_text("not json")
-    assert language_packs.enabled() == ["en", "fr"]
+    assert language_packs.enabled() == ["en"]
     assert languages.codes()[:2] == ["en", "fr"]
     assert paths.home() == tmp_path
 
@@ -127,7 +127,7 @@ def test_cli_languages_list_add_remove(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(voices, "installed", lambda: [])
     assert cli.run_cli(["languages", "list"]) == 0
     got = last()["languages"]
-    assert [x["code"] for x in got] == languages.codes() and [x["code"] for x in got if x["enabled"]] == ["en", "fr"]
+    assert [x["code"] for x in got] == languages.codes() and [x["code"] for x in got if x["enabled"]] == ["en"]
     assert cli.run_cli(["languages", "add", "pt-BR"]) == 0
     assert last()["code"] == "pt" and language_packs.is_enabled("pt")
     assert cli.run_cli(["languages", "remove", "pt"]) == 0
@@ -135,3 +135,22 @@ def test_cli_languages_list_add_remove(monkeypatch, capsys, tmp_path):
     assert cli.run_cli(["languages", "add", "xx"]) == 2 and "Unsupported language" in last()["message"]
     language_packs._save(["en"])
     assert cli.run_cli(["languages", "remove", "en"]) == 1 and "At least one language" in last()["message"]
+
+
+def test_an_existing_install_keeps_the_languages_it_already_has_voices_for(monkeypatch, tmp_path):
+    fake_installed_langs = [("fr_siwis_female_book", "fr"), ("my_clip", "es")]
+
+    class V:
+        def __init__(self, i, lang):
+            self.id, self.lang = i, lang
+
+    monkeypatch.setattr(voices, "installed", lambda: [V(i, lang) for i, lang in fake_installed_langs])
+    assert language_packs.enabled() == ["en", "fr", "es"]
+    assert (tmp_path / "languages.json").exists()           # migrated once, so it no longer depends on voices
+    monkeypatch.setattr(voices, "installed", lambda: [])
+    assert language_packs.enabled() == ["en", "fr", "es"]
+
+
+def test_a_fresh_install_has_english_only_and_writes_no_state():
+    assert language_packs.enabled() == ["en"]
+    assert not (paths.home() / "languages.json").exists()

@@ -45,7 +45,7 @@ extension AppModel {
     /// True once `languages list` has been read (an older engine without the command never sets it).
     var languagesKnown: Bool { !languageList.isEmpty }
 
-    /// Codes of the languages that are on, in registry order. English and French until the list is loaded.
+    /// Codes of the languages that are on, in registry order. English until the list is loaded.
     var enabledLanguageCodes: [String] {
         languagesKnown ? languageList.filter(\.enabled).map(\.code) : LanguageRegistry.defaultEnabled
     }

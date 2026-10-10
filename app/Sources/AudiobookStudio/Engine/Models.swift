@@ -399,9 +399,9 @@ struct LanguageChangeResult: Hashable, Sendable {
 enum LanguageRegistry {
     struct Entry: Hashable, Sendable { var name: String; var native: String; var rtl: Bool }
 
-    /// Registry order. English and French are on by default.
+    /// Registry order. Only English is on by default; every other language is added on demand.
     static let codes = ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"]
-    static let defaultEnabled = ["en", "fr"]
+    static let defaultEnabled = ["en"]
 
     static let builtin: [String: Entry] = [
         "en": Entry(name: "English", native: "English", rtl: false),

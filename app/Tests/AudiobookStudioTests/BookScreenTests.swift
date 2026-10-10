@@ -194,13 +194,13 @@ private func draft(_ fixture: String, path: String = "/Books/Austen/book.epub") 
 @Test func languageChoicesIncludeTheBookLanguage() throws {
     let (model, cleanup) = try makeModel()
     defer { cleanup() }
-    #expect(model.bookLanguageChoices == ["en", "fr"])          // engines not loaded yet
+    #expect(model.bookLanguageChoices == ["en"])          // engines not loaded yet: English only
     model.preload(engines: try Fixtures.decode("engines.json", as: EngineList.self))
     var book = try draft("inspect_fr.json")
     book.info.language = "de"
     book.language = "de"
     model.draft = book
-    #expect(model.bookLanguageChoices == ["en", "fr", "de"])    // English, French, German
+    #expect(model.bookLanguageChoices == ["en", "de"])    // English plus the book's own language
 }
 
 @MainActor

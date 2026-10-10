@@ -87,7 +87,7 @@ final class AppModel {
     private(set) var jobs: [JobStatus] = []
     private(set) var cacheInfo: CacheInfo?
     /// `languages list`: the 13 registry languages, which are on, and what each needs. Empty until loaded
-    /// (then English and French count as the enabled ones).
+    /// (then English counts as the enabled one).
     private(set) var languageList: [LanguageInfo] = []
     /// `languages add` in progress, by language code (at most one at a time).
     private(set) var languageDownloads: [String: LanguageDownload] = [:]

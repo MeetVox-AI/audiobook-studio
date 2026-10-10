@@ -104,7 +104,7 @@ private func book(language code: String) throws -> BookDraft {
 @Test func enabledLanguagesComeFromTheEngineList() throws {
     let (model, _, cleanup) = try makeModel(fixture: nil)
     defer { cleanup() }
-    #expect(!model.languagesKnown && model.enabledLanguageCodes == ["en", "fr"])      // before the list is loaded
+    #expect(!model.languagesKnown && model.enabledLanguageCodes == ["en"])      // before the list is loaded
     model.preload(languages: try languages("languages_list_variant.json"))
     #expect(model.enabledLanguageCodes == ["en", "fr", "es", "ru"])
     #expect(model.isEnabled("es") && model.isEnabled("ES") && !model.isEnabled("de"))

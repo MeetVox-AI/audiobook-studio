@@ -88,6 +88,7 @@ private struct ChoiceRow: View {
     let detail: String
     let trailing: String
     var tag: String?
+    var extra: String?
     let isOn: Bool
     let action: () -> Void
     @Environment(\.colorScheme) private var colorScheme
@@ -108,6 +109,12 @@ private struct ChoiceRow: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let extra {
+                        Text(extra)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: Theme.Space.s)
                 Text(trailing)
@@ -125,7 +132,67 @@ private struct ChoiceRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
         .accessibilityLabel("\(title), \(trailing)")
-        .accessibilityHint(detail)
+        .accessibilityHint(extra.map { "\(detail) \($0)" } ?? detail)
+    }
+}
+
+/// A language choice: native name, English name, a checkmark. Compact, for a grid.
+private struct LanguageCell: View {
+    let code: String
+    let isOn: Bool
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let entry = LanguageRegistry.builtin[code]
+        let name = entry?.name ?? code
+        Button(action: action) {
+            HStack(spacing: Theme.Space.s) {
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isOn ? AnyShapeStyle(Theme.accentForeground) : AnyShapeStyle(Color.secondary))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(entry?.native ?? name).font(.headline)
+                        .environment(\.layoutDirection, entry?.rtl == true ? .rightToLeft : .leftToRight)
+                    if entry?.native != name { Text(name).font(.caption).foregroundStyle(.secondary) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.Space.m)
+            .padding(.vertical, Theme.Space.s + 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isOn ? Theme.accent.opacity(colorScheme == .dark ? 0.16 : 0.08) : Theme.inset, in: .smooth(Theme.Radius.tile))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
+                .strokeBorder(isOn ? Theme.accent.opacity(0.55) : Theme.hairline, lineWidth: isOn ? 1.5 : 1))
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+        .accessibilityLabel(entry.map { $0.native == name ? name : "\(name), \($0.native)" } ?? name)
+        .accessibilityValue(isOn ? "Selected" : "Not selected")
+    }
+}
+
+/// The non-blocking note about languages no chosen voice speaks, with a one-tap suggestion.
+private struct CoverageNotice: View {
+    @Environment(AppModel.self) private var model
+    var showAction = true
+
+    var body: some View {
+        let flow = model.setup
+        if let note = flow.coverageNote {
+            InlineBanner(systemImage: "text.bubble", tint: Theme.warning) {
+                Text(note).fixedSize(horizontal: false, vertical: true)
+                if showAction, !flow.suggestedEngines.isEmpty {
+                    let names = flow.suggestedEngines.compactMap { SetupCatalog.engineNames[$0] }.joined(separator: " and ")
+                    Button("Add \(names)") { flow.acceptSuggestion() }
+                        .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                        .accessibilityLabel("Add \(names) to your choices")
+                }
+            }
+        }
     }
 }
 
@@ -196,13 +263,19 @@ private struct LanguagesStep: View {
         let flow = model.setup
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "globe", title: "Which languages do you read?",
-                       subtitle: "Choose the languages of your books. You can add more later in Voices.")
-            VStack(spacing: Theme.Space.s) {
-                ForEach(SetupCatalog.languages, id: \.code) { lang in
-                    ChoiceRow(title: lang.name, detail: lang.code == "en" ? "Books in English" : "Livres en français",
-                              trailing: "", isOn: flow.languages.contains(lang.code)) { flow.toggleLanguage(lang.code) }
+                       subtitle: "Choose the languages of your books. Each one adds only its small reference voices (about \(Int(SetupCatalog.voiceMBPerLanguage)) MB); the voice models are shared. You can change this any time in Settings.")
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: Theme.Space.s)], spacing: Theme.Space.s) {
+                    ForEach(LanguageRegistry.codes, id: \.self) { code in
+                        LanguageCell(code: code, isOn: flow.languages.contains(code)) { flow.toggleLanguage(code) }
+                    }
                 }
+                .padding(1)
             }
+            .frame(maxHeight: 320)
+            .accessibilityLabel("Languages")
+            Text(flow.languages.count == 1 ? "1 language selected" : "\(flow.languages.count) languages selected")
+                .font(.callout).foregroundStyle(.secondary)
             Footer(primaryTitle: "Continue", primary: { flow.step = .models }) {
                 Button("Back") { flow.step = .welcome }.accessibilityLabel("Go back")
             }
@@ -218,7 +291,7 @@ private struct ModelsStep: View {
         let flow = model.setup
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "waveform", title: "Choose your voices",
-                       subtitle: "Pick one or both. Larger voices sound better and take longer to download and to narrate.")
+                       subtitle: "Nothing is downloaded until you choose it. Larger voices sound better and take longer to download and to narrate.")
             VStack(spacing: Theme.Space.s) {
                 ForEach(SetupCatalog.narration) { choice in
                     row(choice, tag: choice.id == "qwen3" ? "Recommended" : nil)
@@ -232,6 +305,7 @@ private struct ModelsStep: View {
                 }
                 .accessibilityLabel("More voices, for personal use only")
             }
+            CoverageNotice()
             HStack {
                 Image(systemName: "internaldrive").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(flow.chosen.isEmpty ? "Choose at least one voice to continue." : "Download size: \(gbText(flow.neededGB))")
@@ -248,8 +322,14 @@ private struct ModelsStep: View {
 
     private func row(_ choice: SetupModelChoice, tag: String?) -> some View {
         let installed = model.models.first { $0.engine == choice.id }?.installed ?? false
+        var extra: String?
+        if let c = model.setup.coverage(of: choice.id), !model.setup.languages.isEmpty {
+            extra = c.missing.isEmpty ? "Narrates \(c.speaks.count == 1 ? "your language" : "all your languages")."
+                : c.speaks.isEmpty ? "Does not narrate \(SetupCatalog.languageList(c.missing))."
+                : "Narrates \(SetupCatalog.languageList(c.speaks)); not \(SetupCatalog.languageList(c.missing))."
+        }
         return ChoiceRow(title: choice.title, detail: choice.detail,
-                         trailing: installed ? "Installed" : gbText(choice.gb), tag: tag,
+                         trailing: installed ? "Installed" : gbText(choice.gb), tag: tag, extra: extra,
                          isOn: model.setup.chosen.contains(choice.id)) { model.setup.toggleModel(choice.id) }
     }
 }
@@ -269,10 +349,14 @@ private struct ReviewStep: View {
                     line(done ? "checkmark.circle" : "arrow.down.circle", "\(choice.listTitle ?? choice.title)\(done ? " (already installed)" : "")",
                          detail: done ? nil : gbText(choice.gb))
                 }
-                if !flow.voiceIds.isEmpty {
-                    line("person.wave.2", "Reference voices for \(SetupCatalog.languages.filter { flow.languages.contains($0.code) }.map(\.name).joined(separator: " and "))")
+                ForEach(flow.languagePlan.add, id: \.self) { code in
+                    line("person.wave.2", "\(Formatters.languageName(code)) reference voices", detail: "~\(Int(SetupCatalog.voiceMBPerLanguage)) MB")
+                }
+                ForEach(flow.languagePlan.remove, id: \.self) { code in
+                    line("minus.circle", "Turn off \(Formatters.languageName(code)) and delete its voices")
                 }
             }
+            CoverageNotice(showAction: false)
             if flow.needsHomebrew { HomebrewNotice() }
             if let blocker = flow.blocker {
                 InlineBanner(systemImage: "externaldrive.badge.exclamationmark", tint: Theme.danger) { Text(blocker) }
@@ -347,9 +431,15 @@ private struct WorkingStep: View {
             }
             VStack(alignment: .leading, spacing: Theme.Space.s) {
                 ForEach(flow.items) { item in
-                    HStack(spacing: Theme.Space.s) {
-                        icon(item.state).frame(width: 22)
-                        Text(item.title).foregroundStyle(item.state == .pending ? .secondary : .primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: Theme.Space.s) {
+                            icon(item.state).frame(width: 22)
+                            Text(item.title).foregroundStyle(item.state == .pending ? .secondary : .primary)
+                        }
+                        if let note = item.note {
+                            Text(note).font(.caption).foregroundStyle(.secondary).padding(.leading, 30)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .accessibilityElement(children: .combine)
                 }
@@ -395,6 +485,19 @@ private struct DoneStep: View {
         VStack(alignment: .leading, spacing: Theme.Space.l) {
             StepHeader(systemImage: "checkmark.seal.fill", title: "You’re all set",
                        subtitle: "Drop an EPUB or PDF on the window to make your first audiobook. Add more voices or languages any time from the sidebar.")
+            if !model.setup.languageIssues.isEmpty {
+                InlineBanner(systemImage: "exclamationmark.triangle.fill", tint: Theme.warning) {
+                    Text("Some language voices need another try").font(.headline)
+                    ForEach(model.setup.languageIssues) { item in
+                        Text("\(item.title): \(item.note ?? "did not finish").").fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Your languages work, and your own voice clips too. The missing library voices can be downloaded again.")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Button("Try Again") { model.setup.start() }
+                        .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                        .accessibilityLabel("Try downloading the missing voices again")
+                }
+            }
             Footer(primaryTitle: "Make an Audiobook", showSkip: false) { model.setup.finish() }
         }
     }
