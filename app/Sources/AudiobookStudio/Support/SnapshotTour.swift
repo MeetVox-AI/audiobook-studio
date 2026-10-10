@@ -44,6 +44,10 @@ enum SnapshotTour {
             let file = dir.appendingPathComponent("empty-\(appearanceName).png")
             if await snap(to: file) { shots.append(file.lastPathComponent) }
         }
+        // AUDIOBOOK_STUDIO_SNAPSHOT_SETUP=1 captures each setup step; =run also installs for real (kokoro, English).
+        if let mode = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SETUP"], !mode.isEmpty {
+            await setupTour(model: model, run: mode == "run", dir: dir, shots: &shots, report: &report)
+        }
         if external { await settingsTour(dir: dir, shots: &shots) }
         if ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_ONLY"] == "settings" {
             report["screens"] = shots
@@ -281,6 +285,42 @@ enum SnapshotTour {
     static func press(_ element: NSObject) -> Bool {
         if let button = element as? NSAccessibilityButton { return button.accessibilityPerformPress() }
         return element.perform(NSSelectorFromString("accessibilityPerformPress")) != nil
+    }
+
+    static func setupTour(model: AppModel, run: Bool, dir: URL, shots: inout [String], report: inout [String: Any]) async {
+        for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (name, step) in [("welcome", SetupStep.welcome), ("languages", .languages), ("models", .models), ("review", .review)] {
+                model.setup.present(from: step)
+                try? await Task.sleep(for: .seconds(1))
+                let file = dir.appendingPathComponent("setup-\(name)-\(appearanceName).png")
+                if await snap(to: file) { shots.append(file.lastPathComponent) }
+            }
+        }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        if run {
+            model.setup.languages = ["en"]
+            model.setup.chosen = ["kokoro"]
+            model.setup.present(from: .review)
+            model.setup.start()
+            var n = 0
+            while model.setup.isWorking, n < 120 {
+                try? await Task.sleep(for: .seconds(5))
+                n += 1
+                if n % 4 == 0 {
+                    let file = dir.appendingPathComponent("setup-run-\(n).png")
+                    if await snap(to: file) { shots.append(file.lastPathComponent) }
+                }
+            }
+            let file = dir.appendingPathComponent("setup-after.png")
+            if await snap(to: file) { shots.append(file.lastPathComponent) }
+            report["setup_error"] = model.setup.error?.message ?? NSNull()
+            report["setup_error_details"] = model.setup.error?.stderrTail ?? NSNull()
+            report["setup_items"] = model.setup.items.map { "\($0.id)=\($0.state)" }
+            report["setup_engine_exists"] = FileManager.default.isExecutableFile(atPath: model.settings.enginePath)
+            report["setup_models_installed"] = model.models.filter(\.installed).map(\.engine)
+            report["setup_state"] = model.settings.setupState.rawValue
+        }
     }
 
     static func snap(to url: URL) async -> Bool {

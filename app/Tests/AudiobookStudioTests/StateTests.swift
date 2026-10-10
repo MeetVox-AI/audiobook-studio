@@ -183,7 +183,7 @@ import Testing
 
 @Test func engineErrorWrapsFailures() {
     let missing = EngineError(EngineFailure.notFound("/nope"))
-    #expect(missing.engineMissing && missing.message.contains("/nope"))
+    #expect(missing.engineMissing && missing.stderrTail.contains("/nope") && !missing.message.contains("Terminal"))
     let failed = EngineError(EngineFailure.failed(message: "Not enough disk space: 1 GB free", stderrTail: "trace"))
     #expect(failed.isDiskSpace && failed.stderrTail == "trace" && !failed.engineMissing)
     #expect(EngineError(failed).id == failed.id)

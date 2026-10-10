@@ -176,6 +176,13 @@ private struct EngineLocationSection: View {
 
     var body: some View {
         Section {
+            HStack {
+                Text(model.needsSetup ? "The voice engine or its voices are not installed yet." : "Reinstall the engine or download more voices.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(model.needsSetup ? "Set Up…" : "Set Up Again…") { model.setup.present() }
+                    .accessibilityLabel("Open the setup")
+            }
             TextField("Location", text: $pathDraft, prompt: Text(EngineClient.defaultPath))
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.leading)

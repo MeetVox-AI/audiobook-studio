@@ -25,6 +25,8 @@ for b in "$(swift build -c release --show-bin-path)"/*.bundle(N); do cp -R "$b" 
 if [[ -f "$APP_DIR/Sources/AudiobookStudio/Resources/AppIcon.icns" ]]; then
   cp "$APP_DIR/Sources/AudiobookStudio/Resources/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 fi
+# The in-app setup runs this script to install the engine (see Support/EngineInstaller.swift).
+cp "$REPO_DIR/scripts/install-engine.sh" "$OUT/Contents/Resources/install-engine.sh"
 # The app's accent colour (indigo, used when the system accent is set to Multicolor): Assets.car + NSAccentColorName.
 xcrun actool "$APP_DIR/Assets/Assets.xcassets" --compile "$OUT/Contents/Resources" --platform macosx \
   --minimum-deployment-target 26.0 --accent-color AccentColor \

@@ -23,8 +23,9 @@ struct EngineError: Error, LocalizedError, Identifiable, Hashable, Sendable {
             self = e
         } else if let f = error as? EngineFailure {
             var missing = false
-            if case .notFound = f { missing = true }
-            self.init(message: f.errorDescription ?? "The engine failed.", stderrTail: f.stderrTail, engineMissing: missing)
+            var tail = f.stderrTail
+            if case .notFound(let path) = f { missing = true; tail = "Looked for the engine at \(path)" }
+            self.init(message: f.errorDescription ?? "The engine failed.", stderrTail: tail, engineMissing: missing)
         } else {
             self.init(message: error.localizedDescription)
         }

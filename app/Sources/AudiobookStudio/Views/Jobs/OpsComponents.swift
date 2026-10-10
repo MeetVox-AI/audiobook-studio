@@ -19,6 +19,7 @@ enum OpsStyle {
 /// An engine failure next to the control that caused it: the engine's message as is, plus a "Details"
 /// disclosure with the stderr tail. "Not enough disk space" failures get a heading of their own.
 struct OpsErrorBox: View {
+    @Environment(AppModel.self) private var model
     let error: EngineError
     var onDismiss: (() -> Void)?
     @State private var showDetails = false
@@ -43,6 +44,13 @@ struct OpsErrorBox: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
+                if error.engineMissing {
+                    Button("Set Up…") { model.setup.present() }
+                        .buttonStyle(.borderedProminent)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.small)
+                        .accessibilityLabel("Open the setup")
+                }
                 if let onDismiss {
                     Button {
                         onDismiss()
