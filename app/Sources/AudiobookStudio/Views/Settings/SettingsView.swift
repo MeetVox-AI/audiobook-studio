@@ -28,6 +28,7 @@ struct SettingsView: View {
             case .general: GeneralSettingsTab()
             case .voices: VoiceSettingsTab()
             case .storage: StorageSettingsTab()
+            case .about: AboutSettingsTab()
             }
         }
         .frame(width: 680, height: 620)
@@ -37,7 +38,7 @@ struct SettingsView: View {
 
 /// The sections of the Settings window.
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, voices, storage
+    case general, voices, storage, about
     var id: Self { self }
 
     var title: String {
@@ -45,6 +46,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return "General"
         case .voices: return "Voices"
         case .storage: return "Storage"
+        case .about: return "About"
         }
     }
 }
@@ -533,5 +535,65 @@ private struct StorageSettingsTab: View {
                 self.error = EngineError(error)
             }
         }
+    }
+}
+
+// MARK: - About
+
+private struct AboutSettingsTab: View {
+    @Environment(Updater.self) private var updater
+    private var version: String {
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+        return short
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                LabeledContent("Version", value: version)
+                if updater.isAvailable {
+                    Toggle("Download and install updates automatically", isOn: Binding(
+                        get: { updater.automaticallyUpdates },
+                        set: { updater.automaticallyUpdates = $0 }))
+                        .accessibilityLabel("Download and install updates automatically")
+                    HStack {
+                        Button("Check for Updates Now") { updater.checkForUpdates() }
+                            .accessibilityLabel("Check for updates now")
+                        Spacer()
+                    }
+                }
+            } header: {
+                Text("Audiobook Studio")
+            } footer: {
+                Text(updater.isAvailable
+                     ? "Audiobook Studio checks once a day. A new version is downloaded in the background and installed the next time you quit the app. A conversion in progress is never interrupted."
+                     : "This is a development build: automatic updates are off.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                LegalPoints()
+                    .padding(.vertical, Theme.Space.xs)
+            } header: {
+                Text("Terms of use")
+            } footer: {
+                Text("You accepted these terms when you first opened the app. They apply to every use of it.")
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                ForEach(Array(LegalText.licences.enumerated()), id: \.offset) { _, item in
+                    LabeledContent(item.name) {
+                        Text(item.licence)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Licences")
+            } footer: {
+                Text("Each component keeps its own licence. Audiobooks made from books you do not hold the rights to are for personal use only.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .modifier(SettingsFormStyle())
     }
 }

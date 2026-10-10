@@ -188,3 +188,14 @@ import Testing
     #expect(failed.isDiskSpace && failed.stderrTail == "trace" && !failed.engineMissing)
     #expect(EngineError(failed).id == failed.id)
 }
+
+@MainActor @Test func termsMustBeAcceptedOnceAndAreRemembered() {
+    let suite = UserDefaults(suiteName: "test.terms.\(UUID().uuidString)")!
+    let settings = AppSettings(defaults: suite)
+    #expect(!settings.hasAcceptedTerms)
+    settings.acceptTerms()
+    #expect(settings.hasAcceptedTerms)
+    #expect(AppSettings(defaults: suite).hasAcceptedTerms)   // survives a relaunch
+    suite.set(AppSettings.currentTermsVersion - 1, forKey: "AudiobookStudio.acceptedTermsVersion")
+    #expect(!AppSettings(defaults: suite).hasAcceptedTerms)  // an older version of the terms asks again
+}

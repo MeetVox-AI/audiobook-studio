@@ -23,6 +23,7 @@
 | 🗣️ **Voices you can actually pick** | Four engines, English and French, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
 | ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
 | ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
+| 🔄 **Keeps itself up to date** | The app checks for new versions daily and installs them in the background (signed updates only). You can turn it off in Settings. |
 | 🌙 **A proper Mac app** | Native SwiftUI, Liquid Glass design, light and dark mode. Conversions run in the background: close the window, quit the app, come back later. |
 
 <div align="center">
@@ -157,6 +158,10 @@ Remove a model with `audiobook-engine models remove <engine>`.
 - **"ffmpeg not found"**: install it with `brew install ffmpeg`. The engine looks on PATH and in the Homebrew and
   MacPorts folders (apps opened from Finder do not get Homebrew on PATH). For another location, set
   `AUDIOBOOK_FFMPEG` and `AUDIOBOOK_FFPROBE` to the full paths.
+
+## Terms of use
+
+Use Audiobook Studio lawfully: convert only books you own or have the right to use, clone a voice only with its owner's permission, and never use it to deceive, impersonate, defraud or harm anyone or to infringe copyright or any other law. You alone are responsible for what you make and for following the licences of the models and voices you use. The app is provided "as is", without warranty; to the fullest extent the law allows, the developer is not liable for any use of the app, for anything made with it, or for any loss or damage. The app shows these terms on first launch and under Settings → About.
 
 ## Limitations
 

@@ -5,12 +5,14 @@
 # notarization credentials stored as a keychain profile:
 #   xcrun notarytool store-credentials AC_NOTARY --apple-id <id> --team-id <TEAMID> --password <app-specific password>
 #
-#   scripts/release.sh                 build, sign, make the DMG, notarize, staple, verify
+#   VERSION=0.2.0 scripts/release.sh   build, sign, make the DMG, notarize, staple, verify, write the update feed
+#   PUBLISH=1 VERSION=0.2.0 scripts/release.sh   ...and create the GitHub release (DMG + appcast.xml)
 #   NOTARIZE=0 scripts/release.sh      same without notarizing (a DMG that is signed only: do not publish it)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
-VERSION="$(sed -n 's/^VERSION="\(.*\)"/\1/p' app/scripts/bundle.sh)"
+VERSION="${VERSION:-$(sed -n 's/^VERSION="${VERSION:-\(.*\)}"/\1/p' app/scripts/bundle.sh)}"
+export VERSION
 IDENTITY="${AUDIOBOOK_SIGN_ID:-$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)}"
 PROFILE="${NOTARY_PROFILE:-AC_NOTARY}"
 OUT="$ROOT/app/build/release"
@@ -58,3 +60,22 @@ else
   echo "Built (signed, NOT notarized): $DMG"
 fi
 shasum -a 256 "$DMG" | tee "$DMG.sha256"
+
+# --- Update feed (Sparkle) -------------------------------------------------------------------------------------
+# appcast.xml lists the new version with its download URL and an EdDSA signature made with the private key in the
+# login keychain. Installed copies read it from the latest GitHub release (SUFeedURL in Info.plist).
+FEED_DIR="$OUT/feed"; rm -rf "$FEED_DIR"; mkdir -p "$FEED_DIR"
+cp "$DMG" "$FEED_DIR/"
+NOTES="$ROOT/docs/release-notes/$VERSION.md"
+[[ -f "$NOTES" ]] && cp "$NOTES" "$FEED_DIR/AudiobookStudio-$VERSION.md"
+PREFIX="${DOWNLOAD_URL_PREFIX:-https://github.com/antoine-debroye/audiobook-converter/releases/download/v$VERSION/}"
+app/.build/artifacts/sparkle/Sparkle/bin/generate_appcast --download-url-prefix "$PREFIX" --embed-release-notes -o "$OUT/appcast.xml" "$FEED_DIR"
+rm -rf "$FEED_DIR"
+echo "Update feed: $OUT/appcast.xml"
+
+if [[ "${PUBLISH:-0}" == "1" ]]; then
+  [[ "${NOTARIZE:-1}" == "1" ]] || { echo "Refusing to publish a DMG that was not notarized."; exit 1; }
+  gh release create "v$VERSION" "$DMG" "$DMG.sha256" "$OUT/appcast.xml" --title "Audiobook Studio $VERSION" \
+    --notes-file "${NOTES:-/dev/null}"
+  echo "Published v$VERSION"
+fi

@@ -47,6 +47,12 @@ final class AppSettings {
     /// Advanced: keep chapter audio files in the job folder after success (`--keep-work`).
     var keepWork: Bool { didSet { save(keepWork, Key.keepWork) } }
 
+    /// Version of the terms of use the user accepted (0 = none). Raise `currentTermsVersion` to ask again.
+    var acceptedTermsVersion: Int { didSet { save(acceptedTermsVersion, Key.terms) } }
+    static let currentTermsVersion = 1
+    var hasAcceptedTerms: Bool { acceptedTermsVersion >= AppSettings.currentTermsVersion }
+    func acceptTerms() { acceptedTermsVersion = AppSettings.currentTermsVersion }
+
     /// Stored only in v1.
     var pacing: Pacing { didSet { saveCodable(pacing, Key.pacing) } }
 
@@ -79,6 +85,7 @@ final class AppSettings {
         static let keepWork = "AudiobookStudio.keepWork"
         static let pacing = "AudiobookStudio.pacing"
         static let licenses = "AudiobookStudio.acknowledgedLicenses"
+        static let terms = "AudiobookStudio.acceptedTermsVersion"
     }
 
     /// `defaults` is injectable for tests (`UserDefaults(suiteName:)`).
@@ -93,6 +100,7 @@ final class AppSettings {
         keepWork = defaults.bool(forKey: Key.keepWork)
         pacing = AppSettings.loadCodable(Pacing.self, Key.pacing, defaults) ?? Pacing()
         acknowledgedLicenses = AppSettings.loadCodable(Set<String>.self, Key.licenses, defaults) ?? []
+        acceptedTermsVersion = defaults.integer(forKey: Key.terms)
     }
 
     func resetEnginePath() { enginePathOverride = nil }

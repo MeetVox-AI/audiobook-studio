@@ -12,11 +12,30 @@ enum SnapshotTour {
         return URL(fileURLWithPath: p, isDirectory: true)
     }
 
+    /// AUDIOBOOK_STUDIO_SNAPSHOT_TERMS=1: the tour shows the first-launch terms sheet, captures it, then accepts.
+    static var showTerms: Bool { ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_TERMS"] == "1" }
+
     static func run(model: AppModel, into dir: URL) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var report: [String: Any] = [:]
         var shots: [String] = []
 
+        if showTerms, external {
+            try? await Task.sleep(for: .seconds(2))
+            if let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain && !($0 is NSPanel) }) {
+                for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                    NSApp.appearance = NSAppearance(named: appearance)
+                    try? await Task.sleep(for: .seconds(1))
+                    report["terms_sheet_found_\(appearanceName)"] = window.attachedSheet != nil
+                    if let sheet = window.attachedSheet {
+                        let file = dir.appendingPathComponent("terms-\(appearanceName).png")
+                        if await externalCapture(to: file, window: sheet) { shots.append(file.lastPathComponent) }
+                    }
+                }
+            }
+            model.settings.acceptTerms()
+            try? await Task.sleep(for: .seconds(1))
+        }
         // The empty "New audiobook" screen, before any book is opened.
         model.selection = .newBook
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
@@ -182,7 +201,7 @@ enum SnapshotTour {
         let control = segmentedControl(in: window.contentView?.superview ?? window.contentView)
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (index, section) in ["General", "Voices", "Storage"].enumerated() {
+            for (index, section) in ["General", "Voices", "Storage", "About"].enumerated() {
                 if let control, index < control.segmentCount {
                     control.selectedSegment = index
                     control.sendAction(control.action, to: control.target)

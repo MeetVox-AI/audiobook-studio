@@ -21,11 +21,19 @@ struct AudiobookStudioApp: App {
             CommandGroup(replacing: .newItem) {
                 OpenBookCommand(model: appDelegate.model)
             }
+            // "Check for Updates…" in the app menu, as macOS apps do (release builds only).
+            CommandGroup(after: .appInfo) {
+                if appDelegate.updater.isAvailable {
+                    Button("Check for Updates…") { appDelegate.updater.checkForUpdates() }
+                        .accessibilityLabel("Check for updates")
+                }
+            }
         }
 
         Settings {
             SettingsView()
                 .environment(appDelegate.model)
+                .environment(appDelegate.updater)
         }
     }
 }
@@ -53,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// The self-check tour (SnapshotTour) keeps its settings in a separate defaults domain, so it never reads
     /// or changes the user's own preferences.
+    let updater = Updater()
+
     let model = AppModel(settings: SnapshotTour.directory == nil
         ? AppSettings()
         : AppSettings(defaults: UserDefaults(suiteName: "local.audiobookstudio.snapshot") ?? .standard))

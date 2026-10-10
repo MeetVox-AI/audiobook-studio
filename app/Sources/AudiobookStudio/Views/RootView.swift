@@ -27,6 +27,13 @@ struct RootView: View {
         .overlay {
             if isDropTargeted { DropHighlight() }
         }
+        // First launch: the terms of use must be accepted. (The self-test tour has its own settings and skips it.)
+        .sheet(isPresented: Binding(
+            get: { !model.settings.hasAcceptedTerms && (SnapshotTour.directory == nil || SnapshotTour.showTerms) },
+            set: { _ in }
+        )) {
+            TermsSheet { model.settings.acceptTerms() }
+        }
     }
 }
 
