@@ -20,6 +20,7 @@ extension View {
 /// An engine failure: the engine's message as is, a "Details" disclosure with the stderr tail, a link to
 /// Settings when the engine is missing, and a prominent style for "Not enough disk space".
 struct BookErrorView: View {
+    @Environment(AppModel.self) private var model
     let error: EngineError
     /// Shows a close button when set.
     var onDismiss: (() -> Void)?
@@ -46,10 +47,10 @@ struct BookErrorView: View {
                 }
                 Spacer(minLength: Theme.Space.s)
                 if error.engineMissing {
-                    SettingsLink { Text("Open Settings") }
-                        .bookCardButton()
+                    Button("Set Up…") { model.setup.present() }
+                        .bookCardButton(prominent: true)
                         .controlSize(.small)
-                        .accessibilityLabel("Open Settings to set the engine location")
+                        .accessibilityLabel("Open the setup")
                 }
                 if let onDismiss {
                     Button(action: onDismiss) {
