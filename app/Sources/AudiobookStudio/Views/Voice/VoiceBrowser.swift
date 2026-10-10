@@ -168,6 +168,7 @@ private struct VoiceOptionRow: View {
     @State private var showDetails = false
     @State private var error: EngineError?
     @State private var confirmingRemoval = false
+    @State private var changingRecording = false
 
     /// Avatar width plus the gap after it: sub-content lines up with the name.
     private static let avatarSize: CGFloat = 40
@@ -215,7 +216,8 @@ private struct VoiceOptionRow: View {
 
             if option.isReference, let entry = option.entry {
                 DisclosureGroup(isExpanded: $showDetails) {
-                    VoiceReferenceDetails(option: option, entry: entry, confirmingRemoval: $confirmingRemoval, error: $error)
+                    VoiceReferenceDetails(option: option, entry: entry, confirmingRemoval: $confirmingRemoval,
+                                          changingRecording: $changingRecording, error: $error)
                         .padding(.top, Theme.Space.s)
                 } label: {
                     Text(option.installed ? "Transcript and credits" : "Credits")
@@ -246,6 +248,7 @@ private struct VoiceOptionRow: View {
         .contextMenu {
             if option.isReference && option.installed {
                 if option.kind == .userClip {
+                    Button("Change Recording…") { changingRecording = true }
                     Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
                 } else {
                     Button("Remove Download") { remove() }
@@ -257,6 +260,9 @@ private struct VoiceOptionRow: View {
                 .accessibilityLabel("Delete the voice \(option.name)")
         } message: {
             Text("Audiobook Studio deletes its copy of the recording and its transcript. Your original file and the audiobooks you already made are not affected.")
+        }
+        .sheet(isPresented: $changingRecording) {
+            if let entry = option.entry { ChangeRecordingSheet(entry: entry) }
         }
     }
 
@@ -410,6 +416,7 @@ private struct VoiceReferenceDetails: View {
     let option: VoiceOption
     let entry: VoiceEntry
     @Binding var confirmingRemoval: Bool
+    @Binding var changingRecording: Bool
     @Binding var error: EngineError?
 
     var body: some View {
@@ -454,6 +461,12 @@ private struct VoiceReferenceDetails: View {
                 let busy = model.busyVoiceIds.contains(entry.id)
                 HStack(spacing: Theme.Space.s) {
                     if option.kind == .userClip {
+                        Button("Change Recording…") { changingRecording = true }
+                            .voiceCapsuleButton()
+                            .controlSize(.small)
+                            .disabled(busy)
+                            .help("Choose a new recording, or clean up the current one again, without deleting the voice")
+                            .accessibilityLabel("Change the recording of \(entry.name)")
                         Button("Delete Voice…", role: .destructive) { confirmingRemoval = true }
                             .voiceCapsuleButton()
                             .controlSize(.small)

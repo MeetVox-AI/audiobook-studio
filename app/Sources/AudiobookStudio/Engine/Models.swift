@@ -233,10 +233,19 @@ struct VoiceEntry: Codable, Hashable, Identifiable, Sendable {
     var sampleRate: Int?
     var sha256: String?
     var path: String?
+    /// Clean-up applied to a user clip (`voices add --isolate --enhance`).
+    var isolate: Bool?
+    var enhance: Bool?
+    /// The kept start of the user's recording (file name in voices/originals), and the name of the file it came
+    /// from. Voices added before this existed have neither: changing their recording needs a new file.
+    var original: String?
+    var originalName: String?
 
     /// Clips the user added with `voices add` (ids start with "user-").
     var isUserClip: Bool { id.hasPrefix("user-") }
     var isInstalled: Bool { installed ?? false }
+    /// The engine kept the start of the recording, so it can be processed again without choosing a file.
+    var hasOriginal: Bool { !(original ?? "").isEmpty }
 }
 
 struct VoiceList: Codable, Sendable { var voices: [VoiceEntry] }

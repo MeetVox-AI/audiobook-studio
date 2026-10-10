@@ -96,26 +96,19 @@ def get(voice_id: str) -> InstalledVoice | None:
     return next((v for v in installed() if v.id == voice_id), None)
 
 
-def _prepare_clip(src: Path, dst: Path, start_s: float | None = None, end_s: float | None = None) -> float:
-    """Mono 24 kHz WAV, trimmed silence, at most MAX_CLIP_S, peak-normalised to -3 dBFS.
+_SILENCE = "silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_threshold=-45dB:stop_duration=0.6"
+SOURCE_S = 60.0  # how much of the user's recording is kept (and read) for clean-up and later reprocessing
 
-    `start_s`/`end_s` cut one segment out of a longer recording (a library clip that is a stretch of an
-    audiobook chapter); without them the whole file is used.
-    """
-    tmp = dst.with_suffix(".tmp.wav")
-    window = min(MAX_CLIP_S, end_s - start_s) if start_s is not None and end_s is not None else MAX_CLIP_S
-    seek = ["-ss", f"{start_s:.3f}"] if start_s else []
-    try:
-        proc = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *seek, "-i", str(src), "-ac", "1",
-                               "-ar", str(CLIP_SR), "-af",
-                               "silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_threshold=-45dB:stop_duration=0.6",
-                               "-t", f"{window:.3f}", str(tmp)], capture_output=True, text=True)
-        if proc.returncode != 0:
-            detail = proc.stderr.strip().splitlines()[-1:] or ["ffmpeg failed"]
-            raise ValueError(f"Could not read this audio clip: {detail[0]}")
-        audio, sr = sf.read(str(tmp), dtype="float32")
-    finally:
-        tmp.unlink(missing_ok=True)
+
+def _ffmpeg(args: list[str]) -> None:
+    proc = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        detail = proc.stderr.strip().splitlines()[-1:] or ["ffmpeg failed"]
+        raise ValueError(f"Could not read this audio clip: {detail[0]}")
+
+
+def _level(audio: np.ndarray, sr: int, dst: Path) -> float:
+    """Check the length, peak-normalise to -3 dBFS and write a 16-bit WAV; returns the duration."""
     if audio.ndim > 1:
         audio = audio.mean(axis=1)
     dur = audio.size / sr
@@ -125,6 +118,64 @@ def _prepare_clip(src: Path, dst: Path, start_s: float | None = None, end_s: flo
     audio = audio * (10 ** (-3 / 20) / peak)
     sf.write(str(dst), audio, sr, subtype="PCM_16")
     return dur
+
+
+def _prepare_clip(src: Path, dst: Path, start_s: float | None = None, end_s: float | None = None,
+                  isolate: bool = False, enhance: bool = False) -> float:
+    """Mono 24 kHz WAV, trimmed silence, at most MAX_CLIP_S, peak-normalised to -3 dBFS.
+
+    `start_s`/`end_s` cut one segment out of a longer recording (a library clip that is a stretch of an
+    audiobook chapter); without them the whole file is used. `isolate` / `enhance` clean the user's recording
+    first (see `_prepare_cleaned`).
+    """
+    if isolate or enhance:
+        return _prepare_cleaned(src, dst, isolate, enhance)
+    tmp = dst.with_suffix(".tmp.wav")
+    window = min(MAX_CLIP_S, end_s - start_s) if start_s is not None and end_s is not None else MAX_CLIP_S
+    seek = ["-ss", f"{start_s:.3f}"] if start_s else []
+    try:
+        _ffmpeg([*seek, "-i", str(src), "-ac", "1", "-ar", str(CLIP_SR), "-af", _SILENCE, "-t", f"{window:.3f}", str(tmp)])
+        audio, sr = sf.read(str(tmp), dtype="float32")
+    finally:
+        tmp.unlink(missing_ok=True)
+    return _level(audio, sr, dst)
+
+
+def _prepare_cleaned(src: Path, dst: Path, isolate: bool, enhance: bool) -> float:
+    """Clean-up path: the first SOURCE_S at 48 kHz -> isolation -> silence trim and MAX_CLIP_S cap -> enhancer on
+    the kept part only (the slow step) -> 24 kHz, -3 dBFS."""
+    from . import cleanup
+
+    cleanup.check_installed(isolate, enhance)  # a missing model fails before any work
+    work = dst.with_name(f"{dst.stem}.clean")
+    work.mkdir(exist_ok=True)
+    try:
+        raw, trimmed, out = work / "raw.wav", work / "trimmed.wav", work / "out.wav"
+        _ffmpeg(["-i", str(src), "-ac", "1", "-ar", str(cleanup.SR), "-t", f"{SOURCE_S:.0f}", str(raw)])
+        if isolate:
+            audio, _ = sf.read(str(raw), dtype="float32")
+            sf.write(str(raw), cleanup.isolate(audio), cleanup.SR, subtype="FLOAT")
+        _ffmpeg(["-i", str(raw), "-af", _SILENCE, "-t", f"{MAX_CLIP_S:.3f}", str(trimmed)])
+        if enhance:
+            audio, _ = sf.read(str(trimmed), dtype="float32")
+            if audio.size / cleanup.SR >= MIN_CLIP_S:  # too short: _level below reports it
+                sf.write(str(trimmed), cleanup.enhance(audio), cleanup.SR, subtype="FLOAT")
+        _ffmpeg(["-i", str(trimmed), "-ar", str(CLIP_SR), str(out)])
+        audio, sr = sf.read(str(out), dtype="float32")
+        return _level(audio, sr, dst)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def originals_dir() -> Path:
+    """The start of each user recording (mono 48 kHz FLAC), kept so the voice can be reprocessed later."""
+    p = voices_dir() / "originals"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _keep_source(src: Path, dst: Path) -> None:
+    _ffmpeg(["-i", str(src), "-ac", "1", "-ar", "48000", "-t", f"{SOURCE_S:.0f}", "-c:a", "flac", str(dst)])
 
 
 def _transcribe(path: Path, lang: str) -> str:
@@ -226,12 +277,19 @@ def _free_user_id(name: str) -> str:
     return voice_id
 
 
-def add_user_clip(src: Path, name: str, lang: str, transcript: str | None = None) -> InstalledVoice:
-    """Import the user's own clip. The user must have the right to use this voice."""
+def add_user_clip(src: Path, name: str, lang: str, transcript: str | None = None,
+                  isolate: bool = False, enhance: bool = False) -> InstalledVoice:
+    """Import the user's own clip. The user must have the right to use this voice.
+
+    The start of the recording is kept (`originals_dir()`) so the voice can be reprocessed later with other
+    clean-up settings (`replace_user_clip`).
+    """
     voice_id = _free_user_id(name)
     staged = voices_dir() / f".{voice_id}.new.wav"
+    staged_src = originals_dir() / f".{voice_id}.new.flac"
     try:
-        dur = _prepare_clip(Path(src), staged)
+        _keep_source(Path(src), staged_src)
+        dur = _prepare_clip(Path(src), staged, isolate=isolate, enhance=enhance)
         if transcript:
             source = "user"
         else:
@@ -239,10 +297,68 @@ def add_user_clip(src: Path, name: str, lang: str, transcript: str | None = None
         meta = {"id": voice_id, "name": name, "lang": lang, "gender": "", "description": "Your own reference clip",
                 "license": "user-provided", "commercial_ok": None, "attribution": "", "source_page": "",
                 "audio_url": "", "transcript": transcript, "transcript_source": source, "duration_s": round(dur, 2),
-                "consent": "User confirmed they have the right to use this voice."}
+                "consent": "User confirmed they have the right to use this voice.",
+                "isolate": isolate, "enhance": enhance, "original": f"{voice_id}.flac",
+                "original_name": Path(src).name}
+        staged_src.replace(_source_path(voice_id))
         return _install(voice_id, staged, meta)
     finally:
         staged.unlink(missing_ok=True)  # moved into place on success; leftovers of a failure go
+        staged_src.unlink(missing_ok=True)
+
+
+def _source_path(voice_id: str) -> Path:
+    return originals_dir() / f"{_check_id(voice_id)}.flac"
+
+
+def replace_user_clip(voice_id: str, src: Path | None = None, isolate: bool | None = None,
+                      enhance: bool | None = None, transcript: str | None = None) -> InstalledVoice:
+    """Change the recording of one of the user's voices, keeping its id, name, language and settings.
+
+    With `src`: a new recording replaces the old one (transcript: the given one, else Whisper). Without it: the
+    kept start of the recording is processed again, e.g. with isolation turned on. The transcript is kept only
+    when the prepared clip is about as long as before (clean-up can change where silence is trimmed, and so
+    which words the 20 s clip holds); otherwise Whisper transcribes it again. `None` keeps a clean-up setting.
+    """
+    voice_id = _check_id(voice_id)
+    iv = get(voice_id)
+    if iv is None:
+        raise KeyError(f"Voice '{voice_id}' is not installed")
+    if not voice_id.startswith("user-"):
+        raise ValueError("Only voices you added yourself can change their recording.")
+    busy = jobs_using(voice_id)
+    if busy:
+        title = busy[0].get("title") or "a book"
+        raise VoiceInUse(f"This voice is narrating \"{title}\" right now. Stop that conversion or wait for it "
+                         "to finish, then change the recording.")
+    kept = _source_path(voice_id)
+    if src is None and not kept.exists():
+        raise ValueError("This voice has no saved original. Choose the recording again.")
+    meta = json.loads(_meta_path(voice_id).read_text(encoding="utf-8"))
+    isolate = bool(meta.get("isolate", False)) if isolate is None else isolate
+    enhance = bool(meta.get("enhance", False)) if enhance is None else enhance
+    staged = voices_dir() / f".{voice_id}.new.wav"
+    staged_src = originals_dir() / f".{voice_id}.new.flac"
+    try:
+        if src is not None:
+            _keep_source(Path(src), staged_src)
+            dur = _prepare_clip(Path(src), staged, isolate=isolate, enhance=enhance)
+            meta["original_name"] = Path(src).name
+            same_words = False
+        else:
+            dur = _prepare_clip(kept, staged, isolate=isolate, enhance=enhance)
+            same_words = abs(dur - float(meta.get("duration_s") or 0)) <= 0.5
+        if transcript:
+            meta["transcript"], meta["transcript_source"] = transcript.strip(), "user"
+        elif not same_words:
+            meta["transcript"], meta["transcript_source"] = _transcribe(staged, iv.lang), "whisper"
+        meta.update({"isolate": isolate, "enhance": enhance, "original": kept.name, "duration_s": round(dur, 2)})
+        if staged_src.exists():
+            staged_src.replace(kept)
+        return _install(voice_id, staged, meta)
+    finally:
+        staged.unlink(missing_ok=True)
+        staged_src.unlink(missing_ok=True)
 
 
 class VoiceInUse(RuntimeError):
@@ -282,6 +398,7 @@ def remove(voice_id: str) -> bool:
         if p.exists():
             p.unlink()
             found = True
+    (voices_dir() / "originals" / f"{voice_id}.flac").unlink(missing_ok=True)  # our kept copy, not the user's file
     return found
 
 

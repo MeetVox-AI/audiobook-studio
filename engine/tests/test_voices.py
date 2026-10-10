@@ -38,7 +38,11 @@ def digest(p) -> str:
 
 
 def listing() -> set[str]:
-    return {p.name for p in voices.voices_dir().iterdir()}
+    """Every file in the voices folder; the kept originals subfolder is looked into, not listed itself."""
+    root = voices.voices_dir()
+    names = {p.name for p in root.iterdir() if p.name != "originals"}
+    originals = root / "originals"
+    return names | ({f"originals/{p.name}" for p in originals.iterdir()} if originals.is_dir() else set())
 
 
 def test_adding_a_clip_under_an_existing_name_keeps_the_first_voice(tmp_path):

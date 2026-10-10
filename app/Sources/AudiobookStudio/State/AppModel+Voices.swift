@@ -317,8 +317,11 @@ struct AddVoiceForm: Hashable, Sendable {
     var language = "en"
     var transcript = ""
     var hasRights = false
+    /// Clean the recording first: remove background noise and music / restore speech clarity.
+    var isolate = false
+    var enhance = false
 
-    /// Languages the form offers: the enabled ones (`AppModel.enabledLanguageCodes`).
+    /// Languages the form offers: the ones a cloning engine can speak (`AppModel.cloningLanguageCodes`).
     var languages: [String]
 
     init(language: String? = nil, languages: [String] = LanguageRegistry.defaultEnabled) {
@@ -349,7 +352,7 @@ struct AddVoiceForm: Hashable, Sendable {
 
     /// "Choose English or French." (up to three languages are named; more are described).
     var languageMessage: String {
-        guard languages.count <= 3, !languages.isEmpty else { return "Choose one of the languages that are turned on in Settings." }
+        guard languages.count <= 3, !languages.isEmpty else { return "Choose one of the listed languages." }
         return "Choose " + VoiceText.list(languages.map(Formatters.languageName), conjunction: "or") + "."
     }
 
@@ -368,6 +371,60 @@ struct AddVoiceForm: Hashable, Sendable {
         guard let first = stem.first else { return "" }
         return first.uppercased() + stem.dropFirst()
     }
+}
+
+// MARK: - Change a voice's recording
+
+/// The "Change Recording" form for one of the user's voices: a new file, or the kept original processed again
+/// with other clean-up boxes. `--i-have-rights` is passed only with a new file, when `hasRights` is on.
+struct ChangeRecordingForm: Hashable, Sendable {
+    let voiceId: String
+    /// The engine kept the start of the recording (voices added before that have no original).
+    let hasOriginal: Bool
+    /// Settings the voice has now.
+    let currentIsolate: Bool
+    let currentEnhance: Bool
+
+    var file: URL?
+    var isolate: Bool
+    var enhance: Bool
+    var transcript = ""
+    var hasRights = false
+
+    init(entry: VoiceEntry) {
+        voiceId = entry.id
+        hasOriginal = entry.hasOriginal
+        currentIsolate = entry.isolate ?? false
+        currentEnhance = entry.enhance ?? false
+        isolate = currentIsolate
+        enhance = currentEnhance
+    }
+
+    var isNewFile: Bool { file != nil }
+
+    /// nil when empty: the engine then transcribes the new recording with Whisper.
+    var transcriptArgument: String? {
+        let t = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
+    }
+
+    /// What still blocks the button; nil when it can be submitted.
+    var missingStep: String? {
+        if file == nil {
+            if !hasOriginal { return "Choose the recording again: this voice was added before originals were kept." }
+            if isolate == currentIsolate && enhance == currentEnhance { return "Choose a new recording or change a box." }
+            return nil
+        }
+        if !hasRights { return "Confirm that you have the right to use this voice." }
+        return nil
+    }
+
+    var canSubmit: Bool { missingStep == nil }
+
+    /// "Replace Recording" for a new file, else "Reprocess".
+    var actionTitle: String { isNewFile ? "Replace Recording" : "Reprocess" }
+
+    mutating func chooseFile(_ url: URL) { file = url }
 }
 
 // MARK: - Wording
@@ -474,6 +531,18 @@ final class VoiceLab {
     }
 
     func setComparison(_ comparison: VoiceComparison?) { self.comparison = comparison }
+
+    /// Stops and drops the previews made with one reference voice (its recording changed), and the comparison
+    /// that shows one of them.
+    func forgetPreviews(refVoiceId: String) {
+        for (key, run) in previews where key.voice.refVoiceId == refVoiceId {
+            if run.isRunning { run.cancel() }
+            previews[key] = nil
+        }
+        if let c = comparison, c.a.voice.refVoiceId == refVoiceId || c.b.voice.refVoiceId == refVoiceId {
+            comparison = nil
+        }
+    }
 }
 
 extension EngineRun {
@@ -576,6 +645,15 @@ extension AppModel {
     /// The model of `engineId` is known to be missing (`models list` loaded and says not installed).
     func isEngineMissing(_ engineId: String) -> Bool {
         models.first { $0.engine == engineId }.map { !$0.installed } ?? false
+    }
+
+    /// The line under a ticked clean-up box: installed, or what is downloaded first. nil while the model list
+    /// does not mention it (an older engine: it reports a missing model itself).
+    func cleanupModelNote(_ modelId: String) -> (installed: Bool, text: String)? {
+        guard let status = models.first(where: { $0.engine == modelId }) else { return nil }
+        if status.installed { return (true, "Installed on this Mac.") }
+        let size = status.downloadGb.map { Formatters.gigabytes($0) + " " } ?? ""
+        return (false, "Not installed: \(size.isEmpty ? "it" : size)will be downloaded first.")
     }
 
     /// The Whisper model behind "Check every sentence with speech recognition" is not installed.

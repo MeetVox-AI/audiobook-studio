@@ -78,6 +78,9 @@ struct ModelsView: View {
                     if !groups.narration.isEmpty {
                         section("Narration", models: groups.narration, kind: .narration)
                     }
+                    if !groups.cleanup.isEmpty {
+                        section("Voice clean-up", models: groups.cleanup, kind: .cleanup)
+                    }
                     if !groups.other.isEmpty {
                         section("Quality check", models: groups.other, kind: .speechCheck)
                     }
@@ -103,17 +106,9 @@ struct ModelsView: View {
                  onRemove: { modelToRemove = status })
     }
 
-    /// Narration engines first (engine order), then other models such as the speech-check model.
-    private var grouped: (narration: [ModelStatus], other: [ModelStatus]) {
-        let engineIds = model.engines.map(\.id)
-        guard !engineIds.isEmpty else {
-            return (model.models.filter { $0.engine != OpsModelInfo.speechCheckModel },
-                    model.models.filter { $0.engine == OpsModelInfo.speechCheckModel })
-        }
-        let narration = model.models.filter { engineIds.contains($0.engine) }
-            .sorted { (engineIds.firstIndex(of: $0.engine) ?? 0) < (engineIds.firstIndex(of: $1.engine) ?? 0) }
-        let other = model.models.filter { !engineIds.contains($0.engine) }
-        return (narration, other)
+    /// Narration engines first (engine order), then voice clean-up, then the speech-check model.
+    private var grouped: (narration: [ModelStatus], cleanup: [ModelStatus], other: [ModelStatus]) {
+        OpsModelInfo.groups(model.models, engineIds: model.engines.map(\.id))
     }
 
     private var freeSpaceText: String {
@@ -169,13 +164,15 @@ struct ModelsView: View {
     }
 }
 
-/// What a model is for, which picks its icon: a narration (text-to-speech) engine or the speech check.
+/// What a model is for, which picks its icon: a narration (text-to-speech) engine, voice clean-up for
+/// "Add My Voice", or the speech check.
 private enum ModelsKind {
-    case narration, speechCheck
+    case narration, cleanup, speechCheck
 
     var systemImage: String {
         switch self {
         case .narration: return "waveform"
+        case .cleanup: return "wand.and.stars"
         case .speechCheck: return "ear.badge.checkmark"
         }
     }
@@ -183,6 +180,7 @@ private enum ModelsKind {
     var tint: Color {
         switch self {
         case .narration: return Theme.accent
+        case .cleanup: return Theme.success
         case .speechCheck: return Theme.highlight
         }
     }

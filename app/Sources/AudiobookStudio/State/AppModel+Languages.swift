@@ -50,6 +50,29 @@ extension AppModel {
         languagesKnown ? languageList.filter(\.enabled).map(\.code) : LanguageRegistry.defaultEnabled
     }
 
+    /// Languages a recording can be added in: every registry language that at least one cloning engine speaks,
+    /// whether or not the language is turned on. Before the engine list is read, the enabled languages.
+    var cloningLanguageCodes: [String] {
+        let spoken = Set(engines.filter(\.supportsCloning).flatMap(\.languages))
+        guard !spoken.isEmpty else { return enabledLanguageCodes }
+        return LanguageRegistry.codes.filter(spoken.contains)
+    }
+
+    /// True when `code` is a language that is off (so adding a voice in it first downloads the language).
+    func needsDownload(_ code: String) -> Bool {
+        guard let info = languageInfo(code) else { return false }
+        return !info.enabled
+    }
+
+    /// The line under the language picker of "Add My Voice": installed, or what is downloaded first.
+    func addVoiceLanguageNote(_ code: String) -> String {
+        let name = Formatters.languageName(code)
+        guard let info = languageInfo(code) else { return "" }
+        if info.enabled { return "\(name) is installed." }
+        return "\(name) is not installed yet. It will be downloaded and turned on when you add this voice. "
+            + languageAddHint(info)
+    }
+
     func isEnabled(_ code: String) -> Bool { enabledLanguageCodes.contains(code.lowercased()) }
 
     func languageInfo(_ code: String) -> LanguageInfo? { languageList.first { $0.code == code.lowercased() } }
