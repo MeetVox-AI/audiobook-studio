@@ -62,13 +62,24 @@ class InstalledVoice:
                 "transcript": self.transcript, "transcript_source": self.transcript_source, **self.meta}
 
 
+class VoiceProblem(ValueError):
+    """A problem with a voice or a clip, worded for the user: the CLI shows the message as it is."""
+
+
+class VoiceNotFound(KeyError):
+    """No installed (or library) voice has this id; worded for the user."""
+
+    def __str__(self) -> str:  # KeyError would quote the message
+        return str(self.args[0]) if self.args else "Voice not found."
+
+
 _VOICE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}")
 
 
 def _check_id(voice_id: str) -> str:
     """Voice ids name files in voices_dir(): never a path ('../x') or a hidden name."""
     if not isinstance(voice_id, str) or not _VOICE_ID.fullmatch(voice_id) or ".." in voice_id:
-        raise ValueError(f"Invalid voice id '{voice_id}'.")
+        raise VoiceProblem(f"Invalid voice id '{voice_id}'.")
     return voice_id
 
 
@@ -104,7 +115,7 @@ def _ffmpeg(args: list[str]) -> None:
     proc = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True)
     if proc.returncode != 0:
         detail = proc.stderr.strip().splitlines()[-1:] or ["ffmpeg failed"]
-        raise ValueError(f"Could not read this audio clip: {detail[0]}")
+        raise VoiceProblem(f"Could not read this audio clip: {detail[0]}")
 
 
 def _level(audio: np.ndarray, sr: int, dst: Path) -> float:
@@ -113,7 +124,7 @@ def _level(audio: np.ndarray, sr: int, dst: Path) -> float:
         audio = audio.mean(axis=1)
     dur = audio.size / sr
     if dur < MIN_CLIP_S:
-        raise ValueError(f"Clip too short after trimming silence ({dur:.1f}s); need at least {MIN_CLIP_S:.0f}s of speech.")
+        raise VoiceProblem(f"Clip too short after trimming silence ({dur:.1f}s); need at least {MIN_CLIP_S:.0f}s of speech.")
     peak = float(np.max(np.abs(audio))) or 1.0
     audio = audio * (10 ** (-3 / 20) / peak)
     sf.write(str(dst), audio, sr, subtype="PCM_16")
@@ -209,7 +220,7 @@ def _fetch(entry: dict, raw: Path) -> None:
                 while chunk := r.read(1 << 16):
                     size += len(chunk)
                     if size > MAX_DOWNLOAD_BYTES:
-                        raise ValueError("Download larger than 20 MB; refusing.")
+                        raise VoiceProblem("Download larger than 20 MB; refusing.")
                     f.write(chunk)
             return
 
@@ -220,25 +231,25 @@ def _fetch(entry: dict, raw: Path) -> None:
                 data = r.read(size if size and size > 0 else 1 << 16)
                 self.n += len(data)
                 if self.n > limit:
-                    raise ValueError(f"'{member}' is not within the first {limit >> 20} MB of the archive; refusing.")
+                    raise VoiceProblem(f"'{member}' is not within the first {limit >> 20} MB of the archive; refusing.")
                 return data
 
         with tarfile.open(fileobj=Capped(), mode="r|*") as tar:
             for info in tar:
                 if info.name == member and info.isfile():
                     if info.size > MAX_DOWNLOAD_BYTES:
-                        raise ValueError("Download larger than 20 MB; refusing.")
+                        raise VoiceProblem("Download larger than 20 MB; refusing.")
                     src = tar.extractfile(info)
                     assert src is not None
                     raw.write_bytes(src.read())
                     return
-    raise ValueError(f"'{member}' was not found in the archive.")
+    raise VoiceProblem(f"'{member}' was not found in the archive.")
 
 
 def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
     entry = next((v for v in library() if v["id"] == voice_id), None)
     if entry is None:
-        raise KeyError(f"Unknown library voice '{voice_id}'")
+        raise VoiceNotFound(f"There is no library voice '{voice_id}'.")
     _check_id(voice_id)
     work = voices_dir() / f".{voice_id}.download"
     work.mkdir(exist_ok=True)
@@ -247,7 +258,7 @@ def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
         _fetch(entry, raw)
         digest = hashlib.sha256(raw.read_bytes()).hexdigest()
         if entry.get("source_sha256") and digest != entry["source_sha256"]:
-            raise ValueError("The downloaded audio is not the file this library entry was checked against "
+            raise VoiceProblem("The downloaded audio is not the file this library entry was checked against "
                              "(its checksum differs); refusing to install it.")
         staged = work / "clip.wav"
         dur = _prepare_clip(raw, staged, entry.get("start_s"), entry.get("end_s"))
@@ -323,9 +334,9 @@ def replace_user_clip(voice_id: str, src: Path | None = None, isolate: bool | No
     voice_id = _check_id(voice_id)
     iv = get(voice_id)
     if iv is None:
-        raise KeyError(f"Voice '{voice_id}' is not installed")
+        raise VoiceNotFound(f"Voice '{voice_id}' is not installed.")
     if not voice_id.startswith("user-"):
-        raise ValueError("Only voices you added yourself can change their recording.")
+        raise VoiceProblem("Only voices you added yourself can change their recording.")
     busy = jobs_using(voice_id)
     if busy:
         title = busy[0].get("title") or "a book"
@@ -333,7 +344,7 @@ def replace_user_clip(voice_id: str, src: Path | None = None, isolate: bool | No
                          "to finish, then change the recording.")
     kept = _source_path(voice_id)
     if src is None and not kept.exists():
-        raise ValueError("This voice has no saved original. Choose the recording again.")
+        raise VoiceProblem("This voice has no saved original. Choose the recording again.")
     meta = json.loads(_meta_path(voice_id).read_text(encoding="utf-8"))
     isolate = bool(meta.get("isolate", False)) if isolate is None else isolate
     enhance = bool(meta.get("enhance", False)) if enhance is None else enhance
@@ -406,7 +417,7 @@ def set_transcript(voice_id: str, text: str) -> InstalledVoice:
     """Correct a clip's transcript (Whisper can mishear names); cloning quality depends on it."""
     mp = _meta_path(voice_id)
     if not mp.exists() or get(voice_id) is None:
-        raise KeyError(f"Voice '{voice_id}' is not installed")
+        raise VoiceNotFound(f"Voice '{voice_id}' is not installed.")
     meta = json.loads(mp.read_text(encoding="utf-8"))
     meta["transcript"], meta["transcript_source"] = text.strip(), "user"
     tmp = mp.with_name(f".{mp.name}.tmp")

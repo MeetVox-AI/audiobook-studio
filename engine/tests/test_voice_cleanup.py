@@ -247,3 +247,29 @@ def test_real_enhancer_returns_audio_of_the_same_length():
     y = cleanup.enhance(x)
     assert y.shape == x.shape and y.dtype == np.float32 and float(np.max(np.abs(y))) <= 1.0
     assert np.isfinite(y).all()
+
+
+# --- error messages the app shows ------------------------------------------------------------------------------
+
+def test_cli_voice_errors_are_plain_sentences(tmp_path):
+    bad = tmp_path / "bad.wav"
+    bad.write_bytes(b"not audio")
+    cases = {
+        ("voices", "replace", "user-nobody", "--isolate"): "Voice 'user-nobody' is not installed.",
+        ("voices", "transcript", "user-nobody", "New words."): "Voice 'user-nobody' is not installed.",
+        ("voices", "download", "no-such-voice"): "There is no library voice 'no-such-voice'.",
+    }
+    for args, message in cases.items():
+        code, ev = _run(list(args))
+        assert code != 0 and ev == {"event": "error", "message": message}, args
+    code, ev = _run(["voices", "add", str(bad), "--name", "B", "--lang", "en", "--transcript", "x", "--i-have-rights"])
+    assert code != 0 and ev["message"].startswith("Could not read this audio clip")  # no "ValueError: "
+
+
+def test_cli_unexpected_errors_keep_their_type_name(tmp_path, monkeypatch):
+    def broken(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(voices, "add_user_clip", broken)
+    code, ev = _run(["voices", "add", str(clip(tmp_path / "a.wav")), "--name", "A", "--lang", "en", "--i-have-rights"])
+    assert code != 0 and ev["message"] == "RuntimeError: boom"   # a bug stays recognisable
