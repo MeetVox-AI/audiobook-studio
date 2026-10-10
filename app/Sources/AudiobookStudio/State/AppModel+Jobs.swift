@@ -478,6 +478,25 @@ enum JobResultSummary {
 struct OpsModelInfo: Hashable, Sendable {
     /// The speech-check model (not a narration engine).
     static let speechCheckModel = "whisper"
+    /// Clean-up models for "Add My Voice" (DeepFilterNet3, MossFormer2-SE).
+    static let voiceIsolationModel = "voice-isolation"
+    static let voiceEnhancerModel = "voice-enhancer"
+    static let cleanupModels = [voiceIsolationModel, voiceEnhancerModel]
+
+    /// The Models screen's groups: narration engines (engine order), voice clean-up, then the speech check and
+    /// anything else. Before the engine list is known, every model that is neither clean-up nor the speech check
+    /// counts as narration.
+    static func groups(_ models: [ModelStatus], engineIds: [String])
+        -> (narration: [ModelStatus], cleanup: [ModelStatus], other: [ModelStatus]) {
+        let cleanup = cleanupModels.compactMap { id in models.first { $0.engine == id } }
+        let rest = models.filter { !cleanupModels.contains($0.engine) }
+        guard !engineIds.isEmpty else {
+            return (rest.filter { $0.engine != speechCheckModel }, cleanup, rest.filter { $0.engine == speechCheckModel })
+        }
+        let narration = rest.filter { engineIds.contains($0.engine) }
+            .sorted { (engineIds.firstIndex(of: $0.engine) ?? 0) < (engineIds.firstIndex(of: $1.engine) ?? 0) }
+        return (narration, cleanup, rest.filter { !engineIds.contains($0.engine) })
+    }
 
     var status: ModelStatus
 

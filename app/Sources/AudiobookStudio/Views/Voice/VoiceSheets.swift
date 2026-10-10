@@ -16,6 +16,8 @@ struct AddVoiceSheet: View {
     @State private var isAdding = false
     @State private var error: EngineError?
     @State private var didSetLanguage = false
+    /// What the bottom bar says while adding ("Downloading Spanish…"); nil before the voice itself is added.
+    @State private var step: String?
     @FocusState private var isEditingTranscript: Bool
 
     var body: some View {
@@ -56,11 +58,16 @@ struct AddVoiceSheet: View {
                         }
 
                         LabeledContent("Language") {
-                            languagePicker
+                            VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                                languagePicker
+                                languageNote
+                            }
                         }
                     }
                     .formStyle(.columns)
                 }
+
+                VoiceCleanupOptions(isolate: $form.isolate, enhance: $form.enhance)
 
                 VoiceSheetGroup {
                     Text("Transcript (optional)")
@@ -105,7 +112,7 @@ struct AddVoiceSheet: View {
                     ProgressView()
                         .controlSize(.small)
                         .accessibilityHidden(true)
-                    Text(form.transcriptArgument == nil ? "Adding the voice and transcribing it…" : "Adding the voice…")
+                    Text(step ?? addingText)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -139,16 +146,17 @@ struct AddVoiceSheet: View {
         .onAppear {
             guard !didSetLanguage else { return }
             didSetLanguage = true
-            form = AddVoiceForm(language: model.draft?.language, languages: model.enabledLanguageCodes)
+            form = AddVoiceForm(language: model.draft?.language, languages: model.cloningLanguageCodes)
         }
     }
 
-    /// Segmented for two or three languages, a menu for more (only the enabled languages are offered).
+    /// Segmented for two or three languages, a menu for more (only languages a cloning engine speaks are offered).
     @ViewBuilder
     private var languagePicker: some View {
         let picker = Picker("Language", selection: $form.language) {
             ForEach(form.languages, id: \.self) { code in
-                Text(Formatters.languageName(code)).tag(code)
+                Text(model.needsDownload(code) && form.languages.count > 3
+                     ? "\(Formatters.languageName(code)) (not installed)" : Formatters.languageName(code)).tag(code)
             }
         }
         .labelsHidden()
@@ -161,9 +169,27 @@ struct AddVoiceSheet: View {
         }
     }
 
+    /// "Spanish is installed." or what will be downloaded first.
+    @ViewBuilder
+    private var languageNote: some View {
+        let text = model.addVoiceLanguageNote(form.language)
+        if !text.isEmpty {
+            Label(text, systemImage: model.needsDownload(form.language) ? "arrow.down.circle" : "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var cloningEngines: String {
         let names = model.engines.filter(\.supportsCloning).map(\.name)
         return names.isEmpty ? "Cloning engines" : VoiceText.list(names)
+    }
+
+    /// "Cleaning, adding and transcribing the voice…"
+    private var addingText: String {
+        let cleaning = form.isolate || form.enhance ? "Cleaning and adding the voice" : "Adding the voice"
+        return cleaning + (form.transcriptArgument == nil ? " and transcribing it…" : "…")
     }
 
     private func add() {
@@ -172,13 +198,248 @@ struct AddVoiceSheet: View {
         isAdding = true
         let name = form.trimmedName, language = form.language
         let transcript = form.transcriptArgument, hasRights = form.hasRights
+        let isolate = form.isolate, enhance = form.enhance
         Task {
-            defer { isAdding = false }
+            defer { isAdding = false; step = nil }
             do {
+                if model.needsDownload(language) {
+                    step = "Downloading \(Formatters.languageName(language))…"
+                    try await model.addLanguage(language)
+                }
+                for id in model.missingCleanupModels(isolate: isolate, enhance: enhance) {
+                    step = "Downloading \(VoiceCleanupOptions.title(id).lowercased())…"
+                    try await model.downloadModel(id)
+                }
+                step = nil
                 let entry = try await model.addVoice(file: file, name: name, language: language,
-                                                     transcript: transcript, hasRights: hasRights)
+                                                     transcript: transcript, hasRights: hasRights,
+                                                     isolate: isolate, enhance: enhance)
                 dismiss()
                 onAdded(entry)
+            } catch {
+                self.error = EngineError(error)
+            }
+        }
+    }
+}
+
+// MARK: - Clean-up boxes
+
+/// "Voice isolation" and "Voice enhancer", shared by "Add My Voice" and "Change Recording". Under a ticked box:
+/// whether its model is installed or will be downloaded first.
+struct VoiceCleanupOptions: View {
+    @Environment(AppModel.self) private var model
+    @Binding var isolate: Bool
+    @Binding var enhance: Bool
+
+    static func title(_ modelId: String) -> String {
+        modelId == OpsModelInfo.voiceIsolationModel ? "Voice isolation" : "Voice enhancer"
+    }
+
+    var body: some View {
+        VoiceSheetGroup {
+            Text("Clean up the recording")
+                .font(.headline)
+            box($isolate, model: OpsModelInfo.voiceIsolationModel,
+                detail: "Removes background noise and music, keeps the voice. DeepFilterNet3 · MIT.")
+            box($enhance, model: OpsModelInfo.voiceEnhancerModel,
+                detail: "Restores clear, studio-like speech. MossFormer2-SE · Apache-2.0. Slower.")
+        }
+    }
+
+    private func box(_ isOn: Binding<Bool>, model modelId: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.xs) {
+            Toggle(isOn: isOn) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.title(modelId))
+                        .fontWeight(.medium)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .accessibilityLabel(Self.title(modelId))
+            .accessibilityHint(detail)
+            if isOn.wrappedValue, let note = model.cleanupModelNote(modelId) {
+                Label(note.text, systemImage: note.installed ? "checkmark.circle" : "arrow.down.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 20)   // under the box's title, past the checkbox
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+// MARK: - Change a voice's recording
+
+/// "Change Recording" for one of the user's voices: choose a new file, or process the kept original again with
+/// other clean-up boxes. The voice keeps its id, name, language and the places it is used.
+struct ChangeRecordingSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let entry: VoiceEntry
+
+    @State private var form: ChangeRecordingForm
+    @State private var isChoosingFile = false
+    @State private var isWorking = false
+    @State private var step: String?
+    @State private var error: EngineError?
+    @FocusState private var isEditingTranscript: Bool
+
+    init(entry: VoiceEntry) {
+        self.entry = entry
+        _form = State(initialValue: ChangeRecordingForm(entry: entry))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Space.l) {
+                VoiceSheetHeader(systemImage: "arrow.triangle.2.circlepath", tint: Theme.accent,
+                                 title: "Change Recording") {
+                    Text("“\(entry.name)” keeps its name, language and the places it is used. Choose a new recording, or clean up the current one again.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VoiceSheetGroup {
+                    Form {
+                        LabeledContent("Current") {
+                            Text(currentText)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        LabeledContent("New recording") {
+                            HStack(spacing: Theme.Space.s + 2) {
+                                Text(form.file?.lastPathComponent ?? "None: reuse the current one")
+                                    .foregroundStyle(form.file == nil ? .secondary : .primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Button(form.file == nil ? "Choose…" : "Change…") { isChoosingFile = true }
+                                    .voiceCapsuleButton()
+                                    .accessibilityLabel("Choose a new recording")
+                                if form.file != nil {
+                                    Button("Clear") { form.file = nil; form.hasRights = false }
+                                        .voiceCapsuleButton()
+                                        .accessibilityLabel("Keep the current recording")
+                                }
+                            }
+                        }
+                    }
+                    .formStyle(.columns)
+                }
+
+                VoiceCleanupOptions(isolate: $form.isolate, enhance: $form.enhance)
+
+                if form.isNewFile {
+                    VoiceSheetGroup {
+                        Text("Transcript (optional)")
+                            .font(.headline)
+                        TextEditor(text: $form.transcript)
+                            .focused($isEditingTranscript)
+                            .font(.callout)
+                            .scrollContentBackground(.hidden)
+                            .padding(Theme.Space.s - 2)
+                            .frame(minHeight: 60, maxHeight: 100)
+                            .voiceTextField(focused: isEditingTranscript)
+                            .accessibilityLabel("Transcript of the new recording, optional")
+                        Text("The exact words spoken in the new recording. Leave it empty to transcribe it automatically.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VoiceSheetGroup {
+                        Toggle(isOn: $form.hasRights) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("I have the right to use this voice")
+                                    .fontWeight(.medium)
+                                Text("It is my own voice, or the speaker has allowed me to clone it.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        .accessibilityLabel("I have the right to use this voice")
+                    }
+                } else if form.hasOriginal {
+                    Text("The transcript is kept when the cleaned clip is as long as before; otherwise it is transcribed again.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let error { VoiceErrorNote(error: error) }
+            }
+            .padding(Theme.Space.xl)
+        }
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            HStack(spacing: Theme.Space.m) {
+                if isWorking {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                    Text(step ?? (form.isNewFile ? "Replacing the recording…" : "Processing the recording again…"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let missing = form.missingStep {
+                    Text(missing)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Theme.Space.s)
+                Button("Cancel") { dismiss() }
+                    .voiceCapsuleButton()
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isWorking)
+                Button(form.actionTitle) { submit() }
+                    .voiceCapsuleButton(prominent: true)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!form.canSubmit || isWorking)
+            }
+            .controlSize(.large)
+            .padding(.horizontal, Theme.Space.xl)
+            .padding(.vertical, Theme.Space.l)
+        }
+        .frame(width: 520, height: 600)
+        .background(Theme.canvas)
+        .fileImporter(isPresented: $isChoosingFile, allowedContentTypes: [.audio]) { result in
+            if case .success(let url) = result { form.chooseFile(url) }
+        }
+    }
+
+    private var currentText: String {
+        guard form.hasOriginal else { return "Original not saved (added before originals were kept)" }
+        var boxes: [String] = []
+        if form.currentIsolate { boxes.append("isolation") }
+        if form.currentEnhance { boxes.append("enhancer") }
+        let name = entry.originalName ?? "Your recording"
+        return boxes.isEmpty ? name : "\(name) · \(boxes.joined(separator: " + "))"
+    }
+
+    private func submit() {
+        guard form.canSubmit else { return }
+        error = nil
+        isWorking = true
+        let f = form
+        Task {
+            defer { isWorking = false; step = nil }
+            do {
+                for id in model.missingCleanupModels(isolate: f.isolate, enhance: f.enhance) {
+                    step = "Downloading \(VoiceCleanupOptions.title(id).lowercased())…"
+                    try await model.downloadModel(id)
+                }
+                step = nil
+                try await model.replaceVoice(id: f.voiceId, file: f.file, isolate: f.isolate, enhance: f.enhance,
+                                             transcript: f.transcriptArgument, hasRights: f.hasRights)
+                dismiss()
             } catch {
                 self.error = EngineError(error)
             }

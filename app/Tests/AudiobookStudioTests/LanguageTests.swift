@@ -143,23 +143,23 @@ private func book(language code: String) throws -> BookDraft {
 }
 
 @MainActor
-@Test func disabledLanguagesAreHiddenFromTheAddVoiceForm() throws {
+@Test func addVoiceFormOffersEveryLanguageACloningEngineSpeaks() throws {
     let (model, _, cleanup) = try makeModel()
     defer { cleanup() }
-    var form = AddVoiceForm(language: "es", languages: model.enabledLanguageCodes)
-    #expect(form.languages == ["en", "fr"] && form.language == "en")          // Spanish is off: not offered
+    #expect(model.cloningLanguageCodes == ["en", "fr"])                       // fixture engines speak only these
+    var list = try Fixtures.decode("engines.json", as: EngineList.self)
+    let q = try #require(list.engines.firstIndex { $0.id == "qwen3" })
+    let k = try #require(list.engines.firstIndex { $0.id == "kokoro" })
+    list.engines[q].languages = ["en", "fr", "es", "de", "ko"]
+    list.engines[k].languages = ["en", "hi"]                                  // Kokoro cannot clone: Hindi stays out
+    model.preload(engines: list)
+    #expect(model.cloningLanguageCodes == ["en", "fr", "es", "de", "ko"])    // registry order; Spanish is off in Settings
+    var form = AddVoiceForm(language: "es", languages: model.cloningLanguageCodes)
+    #expect(form.language == "es")
     form.file = URL(fileURLWithPath: "/tmp/a.wav"); form.name = "Me"; form.hasRights = true
     #expect(form.canSubmit)
-    form.language = "es"
-    #expect(form.missingStep == "Choose English or French.")
-
-    model.preload(languages: try languages("languages_list_variant.json"))
-    var more = AddVoiceForm(language: "es", languages: model.enabledLanguageCodes)
-    #expect(more.language == "es" && more.languages == ["en", "fr", "es", "ru"])
-    more.file = form.file; more.name = "Me"; more.hasRights = true; more.language = "de"
-    #expect(more.missingStep == "Choose one of the languages that are turned on in Settings.")
-    more.language = "ru"
-    #expect(more.canSubmit)
+    form.language = "hi"
+    #expect(form.missingStep == "Choose one of the listed languages.")
 }
 
 @MainActor

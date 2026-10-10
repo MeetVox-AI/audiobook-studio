@@ -800,14 +800,56 @@ final class AppModel {
     /// ("I have the right to use this voice"); `--i-have-rights` is passed only when it is true.
     /// Without a transcript the engine transcribes the clip with Whisper. Throws EngineError.
     @discardableResult
-    func addVoice(file: URL, name: String, language: String, transcript: String?, hasRights: Bool) async throws -> VoiceEntry {
+    func addVoice(file: URL, name: String, language: String, transcript: String?, hasRights: Bool,
+                  isolate: Bool = false, enhance: Bool = false) async throws -> VoiceEntry {
         guard hasRights else {
             throw EngineError(message: "Confirm that you have the right to use this voice before adding it.")
         }
         var args = ["voices", "add", file.path, "--name=\(name)", "--lang=\(language)"]
         if let t = transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { args.append("--transcript=\(t)") }
+        if isolate { args.append("--isolate") }
+        if enhance { args.append("--enhance") }
         args.append("--i-have-rights")
         return try await voiceOperation("add:\(file.path)", args)
+    }
+
+    /// Changes the recording of one of the user's voices (`voices replace`), keeping its id, name and settings.
+    /// With `file`: a new recording (needs `hasRights`, the consent checkbox). Without: the engine processes the
+    /// kept original again with the given clean-up boxes. Previews and samples of the old recording are
+    /// dropped. Throws EngineError.
+    @discardableResult
+    func replaceVoice(id: String, file: URL?, isolate: Bool, enhance: Bool, transcript: String?,
+                      hasRights: Bool) async throws -> VoiceEntry {
+        var args = ["voices", "replace", id, isolate ? "--isolate" : "--no-isolate", enhance ? "--enhance" : "--no-enhance"]
+        if let file {
+            guard hasRights else {
+                throw EngineError(message: "Confirm that you have the right to use this voice before changing the recording.")
+            }
+            args.append("--file=\(file.path)")
+            if let t = transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { args.append("--transcript=\(t)") }
+            args.append("--i-have-rights")
+        }
+        let oldClip = voices.first(where: { $0.id == id })?.path.map { URL(fileURLWithPath: $0) }
+        let entry = try await voiceOperation(id, args)
+        forgetVoiceAudio(id, file: oldClip)
+        return entry
+    }
+
+    /// The clean-up models among the ticked boxes that are known to be missing (download them first).
+    func missingCleanupModels(isolate: Bool, enhance: Bool) -> [String] {
+        var wanted: [String] = []
+        if isolate { wanted.append(OpsModelInfo.voiceIsolationModel) }
+        if enhance { wanted.append(OpsModelInfo.voiceEnhancerModel) }
+        return wanted.filter(isEngineMissing)
+    }
+
+    /// After a voice's recording changed: stop playing the old clip and drop previews and samples made with it,
+    /// so the old audio is not replayed under the same voice.
+    func forgetVoiceAudio(_ id: String, file: URL?) {
+        if let file, player.isPlaying(file) { player.stop() }
+        voiceLab.forgetPreviews(refVoiceId: id)
+        for run in samples where run.voice.refVoiceId == id && run.isRunning { run.cancel() }
+        samples.removeAll { $0.voice.refVoiceId == id }
     }
 
     /// Removes an installed voice (`voices remove`). Throws EngineError.

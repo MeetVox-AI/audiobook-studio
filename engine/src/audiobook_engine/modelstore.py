@@ -20,10 +20,18 @@ class Asset:
 
 
 QA_ID = "whisper"  # speech-to-text model used for quality checks and transcribing reference clips
+ISOLATION_ID = "voice-isolation"  # removes background noise and music from a reference clip ("Add My Voice")
+ENHANCER_ID = "voice-enhancer"    # restores speech clarity of a reference clip
+
+# Clean-up models for reference clips: display name, Hugging Face repo, files, approximate download, licence.
+CLEANUP = {
+    ISOLATION_ID: ("DeepFilterNet3 (voice isolation)", "mlx-community/DeepFilterNet-mlx", ["v3/*"], 0.0087, "MIT"),
+    ENHANCER_ID: ("MossFormer2-SE 48 kHz (voice enhancer)", "starkdmi/MossFormer2-SE-fp16", None, 0.1107, "Apache-2.0"),
+}
 
 
 def all_ids() -> list[str]:
-    return [*specs(), QA_ID]
+    return [*specs(), QA_ID, *CLEANUP]
 
 
 def assets(engine_id: str) -> list[Asset]:
@@ -31,6 +39,11 @@ def assets(engine_id: str) -> list[Asset]:
         from .qa.verify import WHISPER
 
         return [Asset(WHISPER, None, "speech-to-text for quality checks")]
+    if engine_id in CLEANUP:
+        _, repo, patterns, _, _ = CLEANUP[engine_id]
+        purpose = ("removes background noise and music from your own voice recordings" if engine_id == ISOLATION_ID
+                   else "restores clear speech in your own voice recordings")
+        return [Asset(repo, patterns, purpose)]
     spec = specs()[engine_id]
     if engine_id == "kokoro":
         return [Asset(spec.checkpoint, ["*.json", "*.safetensors", "voices/*.safetensors"], "model + 54 voices")]
@@ -60,6 +73,14 @@ def status(engine_id: str) -> dict:
         d = _local_dir(a)
         return {"engine": QA_ID, "name": "Whisper large-v3-turbo (quality checks)", "installed": d is not None,
                 "download_gb": 1.6, "license": "MIT", "noncommercial": False,
+                "parts": [{"repo": a.repo, "purpose": a.purpose, "installed": d is not None,
+                           "bytes": _size(d) if d else 0, "path": str(d) if d else None}]}
+    if engine_id in CLEANUP:
+        name, _, _, gb, lic = CLEANUP[engine_id]
+        a = assets(engine_id)[0]
+        d = _local_dir(a)
+        return {"engine": engine_id, "name": name, "installed": d is not None, "download_gb": gb, "license": lic,
+                "noncommercial": False,
                 "parts": [{"repo": a.repo, "purpose": a.purpose, "installed": d is not None,
                            "bytes": _size(d) if d else 0, "path": str(d) if d else None}]}
     spec = specs()[engine_id]

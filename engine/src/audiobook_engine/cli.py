@@ -374,17 +374,24 @@ def models(
 
 @app.command("voices")
 def voices_cmd(
-    action: str = typer.Argument("list", help="list | download | add | remove | transcript"),
+    action: str = typer.Argument("list", help="list | download | add | replace | remove | transcript"),
     target: Optional[str] = typer.Argument(None, help="Voice id, or a clip file for 'add'"),
     text: Optional[str] = typer.Argument(None, help="New transcript for 'transcript'"),
     name: Optional[str] = typer.Option(None, help="Display name for 'add'"),
     lang: Optional[str] = typer.Option(None, help="Language of the clip for 'add' (any supported code)"),
     transcript: Optional[str] = typer.Option(None, help="Exact words spoken in the clip ('add'; else Whisper)"),
     i_have_rights: bool = typer.Option(False, "--i-have-rights",
-                                       help="Confirm you have the right to use this voice (required for 'add')"),
+                                       help="Confirm you have the right to use this voice (required for 'add', "
+                                            "and for 'replace' with --file)"),
+    isolate: Optional[bool] = typer.Option(None, "--isolate/--no-isolate",
+                                           help="Remove background noise and music first (DeepFilterNet3)"),
+    enhance: Optional[bool] = typer.Option(None, "--enhance/--no-enhance",
+                                           help="Restore speech clarity first (MossFormer2-SE)"),
+    file: Optional[Path] = typer.Option(None, help="New recording for 'replace' (else the kept original is reused)"),
 ) -> None:
     """Reference voices for cloning: a licence-checked library plus your own clips."""
     from . import voices
+    from .voices.cleanup import CleanupModelMissing
 
     if action == "list":
         installed = {v.id: v for v in voices.installed()}
@@ -411,7 +418,13 @@ def voices_cmd(
                 _fail(str(exc))
             if lang is None:
                 _fail("Give the clip language with --lang (e.g. --lang en).")
-            iv = voices.add_user_clip(Path(target), name or Path(target).stem, lang, transcript)
+            iv = voices.add_user_clip(Path(target), name or Path(target).stem, lang, transcript,
+                                      isolate=bool(isolate), enhance=bool(enhance))
+            _emit({"event": "done", **iv.to_json(), "installed": True})
+        elif action == "replace":
+            if file is not None and not i_have_rights:
+                _fail("A new recording requires --i-have-rights: only use voices you are allowed to clone.")
+            iv = voices.replace_user_clip(target, file, isolate=isolate, enhance=enhance, transcript=transcript)
             _emit({"event": "done", **iv.to_json(), "installed": True})
         elif action == "remove":
             if not voices.remove(target):
@@ -422,10 +435,10 @@ def voices_cmd(
                 _fail("Give the corrected transcript as the third argument.")
             _emit({"event": "done", **voices.set_transcript(target, text).to_json()})
         else:
-            _fail("action must be list, download, add, remove or transcript")
+            _fail("action must be list, download, add, replace, remove or transcript")
     except typer.Exit:
         raise
-    except voices.VoiceInUse as exc:
+    except (voices.VoiceInUse, CleanupModelMissing) as exc:
         _fail(str(exc), 1)  # already a sentence for the user
     except Exception as exc:
         _fail(f"{type(exc).__name__}: {exc}", 1)
