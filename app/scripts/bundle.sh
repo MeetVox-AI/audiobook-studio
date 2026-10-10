@@ -7,7 +7,7 @@ APP_DIR="$PWD"
 REPO_DIR="$(cd .. && pwd)"
 ENGINE="${AUDIOBOOK_ENGINE:-$REPO_DIR/engine/.venv/bin/audiobook-engine}"
 OUT="$APP_DIR/build/AudiobookStudio.app"
-VERSION="${VERSION:-0.3.0}"
+VERSION="${VERSION:-0.3.1}"
 # CFBundleVersion must increase with every release (Sparkle compares it): the commit count does.
 BUILD="${BUILD:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 
