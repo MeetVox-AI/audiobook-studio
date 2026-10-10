@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import subprocess
+import tarfile
 import urllib.request
 from dataclasses import dataclass
 from importlib import resources
@@ -28,6 +29,8 @@ from ..tts.base import VoiceChoice
 CLIP_SR = 24000
 MAX_CLIP_S = 20.0
 MIN_CLIP_S = 3.0
+MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
+MAX_ARCHIVE_STREAM_BYTES = 64 * 1024 * 1024  # how far into a corpus archive we read to reach one member
 
 
 def voices_dir() -> Path:
@@ -93,14 +96,20 @@ def get(voice_id: str) -> InstalledVoice | None:
     return next((v for v in installed() if v.id == voice_id), None)
 
 
-def _prepare_clip(src: Path, dst: Path) -> float:
-    """Mono 24 kHz WAV, trimmed silence, at most MAX_CLIP_S, peak-normalised to -3 dBFS."""
+def _prepare_clip(src: Path, dst: Path, start_s: float | None = None, end_s: float | None = None) -> float:
+    """Mono 24 kHz WAV, trimmed silence, at most MAX_CLIP_S, peak-normalised to -3 dBFS.
+
+    `start_s`/`end_s` cut one segment out of a longer recording (a library clip that is a stretch of an
+    audiobook chapter); without them the whole file is used.
+    """
     tmp = dst.with_suffix(".tmp.wav")
+    window = min(MAX_CLIP_S, end_s - start_s) if start_s is not None and end_s is not None else MAX_CLIP_S
+    seek = ["-ss", f"{start_s:.3f}"] if start_s else []
     try:
-        proc = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-ac", "1",
+        proc = subprocess.run([FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *seek, "-i", str(src), "-ac", "1",
                                "-ar", str(CLIP_SR), "-af",
                                "silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_threshold=-45dB:stop_duration=0.6",
-                               "-t", str(MAX_CLIP_S), str(tmp)], capture_output=True, text=True)
+                               "-t", f"{window:.3f}", str(tmp)], capture_output=True, text=True)
         if proc.returncode != 0:
             detail = proc.stderr.strip().splitlines()[-1:] or ["ffmpeg failed"]
             raise ValueError(f"Could not read this audio clip: {detail[0]}")
@@ -133,6 +142,48 @@ def _install(voice_id: str, staged_wav: Path, meta: dict) -> InstalledVoice:
     return get(voice_id)  # type: ignore[return-value]
 
 
+def _fetch(entry: dict, raw: Path) -> None:
+    """Save the entry's source audio to `raw`: the file at audio_url, or one member of the archive there.
+
+    An entry with `archive_member` names a file inside a (possibly multi-GB) .tar/.tar.gz corpus archive. The
+    archive is streamed, never stored, and reading stops at that member, so the member must sit near its start.
+    """
+    req = urllib.request.Request(entry["audio_url"], headers={"User-Agent": "AudiobookStudio/0.1"})
+    member = entry.get("archive_member")
+    limit = MAX_ARCHIVE_STREAM_BYTES if member else MAX_DOWNLOAD_BYTES
+    with urllib.request.urlopen(req, timeout=60) as r:
+        if not member:
+            with open(raw, "wb") as f:
+                size = 0
+                while chunk := r.read(1 << 16):
+                    size += len(chunk)
+                    if size > MAX_DOWNLOAD_BYTES:
+                        raise ValueError("Download larger than 20 MB; refusing.")
+                    f.write(chunk)
+            return
+
+        class Capped:  # counts what the archive reader pulls from the network
+            n = 0
+
+            def read(self, size=-1):
+                data = r.read(size if size and size > 0 else 1 << 16)
+                self.n += len(data)
+                if self.n > limit:
+                    raise ValueError(f"'{member}' is not within the first {limit >> 20} MB of the archive; refusing.")
+                return data
+
+        with tarfile.open(fileobj=Capped(), mode="r|*") as tar:
+            for info in tar:
+                if info.name == member and info.isfile():
+                    if info.size > MAX_DOWNLOAD_BYTES:
+                        raise ValueError("Download larger than 20 MB; refusing.")
+                    src = tar.extractfile(info)
+                    assert src is not None
+                    raw.write_bytes(src.read())
+                    return
+    raise ValueError(f"'{member}' was not found in the archive.")
+
+
 def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
     entry = next((v for v in library() if v["id"] == voice_id), None)
     if entry is None:
@@ -142,16 +193,13 @@ def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
     work.mkdir(exist_ok=True)
     try:
         raw = work / "source"
-        req = urllib.request.Request(entry["audio_url"], headers={"User-Agent": "AudiobookStudio/0.1"})
-        with urllib.request.urlopen(req, timeout=60) as r, open(raw, "wb") as f:
-            size = 0
-            while chunk := r.read(1 << 16):
-                size += len(chunk)
-                if size > 20 * 1024 * 1024:
-                    raise ValueError("Download larger than 20 MB; refusing.")
-                f.write(chunk)
+        _fetch(entry, raw)
+        digest = hashlib.sha256(raw.read_bytes()).hexdigest()
+        if entry.get("source_sha256") and digest != entry["source_sha256"]:
+            raise ValueError("The downloaded audio is not the file this library entry was checked against "
+                             "(its checksum differs); refusing to install it.")
         staged = work / "clip.wav"
-        dur = _prepare_clip(raw, staged)
+        dur = _prepare_clip(raw, staged, entry.get("start_s"), entry.get("end_s"))
         transcript, source = entry.get("transcript", ""), "published"
         if dur < (entry.get("duration_s") or 0) - 0.5:
             # we trimmed the clip, so the published transcript may no longer match
@@ -161,7 +209,7 @@ def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
         meta = {**{k: entry[k] for k in ("id", "name", "lang", "gender", "description", "license", "commercial_ok",
                                          "attribution", "source_page", "audio_url")},
                 "transcript": transcript, "transcript_source": source, "duration_s": round(dur, 2),
-                "sha256": hashlib.sha256(raw.read_bytes()).hexdigest()}
+                "sha256": digest}
         return _install(voice_id, staged, meta)
     finally:
         shutil.rmtree(work, ignore_errors=True)  # also after a failed or refused download

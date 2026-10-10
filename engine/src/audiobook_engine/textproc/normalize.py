@@ -1,4 +1,4 @@
-"""Deterministic text normalisation before TTS (English and French).
+"""Deterministic text normalisation before TTS (English and French; eleven more languages in multilang.py).
 
 Small TTS models mispronounce numbers, symbols and abbreviations; fixing the
 text is more reliable than hoping the model guesses. Every rule here is
@@ -50,6 +50,17 @@ _GROUP = ""
 # 4300. A number grouped by thousands is read as a number up to the nonillions.
 _MAX_DIGITS = 15
 _MAX_GROUPED_DIGITS = 30
+
+
+def _ml(lang: str | None) -> str | None:
+    """The registry code when `lang` is one of the eleven languages handled by multilang.py (es, de, it, pt,
+    ru, zh, ja, ko, hi, ar, nl), else None: English and French (and anything unknown, which reads as English)
+    keep the rules below, unchanged."""
+    if not lang or lang in ("en", "fr"):
+        return None
+    from . import multilang
+
+    return multilang.resolve(lang)
 
 
 def _words(n: int | float, lang: str, to: str = "cardinal") -> str:
@@ -277,6 +288,11 @@ _ABBR_FR = [
 
 
 def expand_abbreviations(text: str, lang: str) -> str:
+    ml = _ml(lang)
+    if ml:
+        from . import multilang
+
+        return multilang.expand_abbreviations_ml(text, ml)
     for pat, rep in _ABBR_FR if lang == "fr" else _ABBR_EN:
         text = re.sub(pat, rep, text)
     return text
@@ -584,6 +600,11 @@ def _decade_context(m: re.Match) -> bool:
 
 
 def expand_numbers(text: str, lang: str) -> str:
+    ml = _ml(lang)
+    if ml:
+        from . import multilang
+
+        return multilang.expand_numbers_ml(text, ml)
     dec = r"\." if lang == "en" else r","
     num = _number_pattern(lang)
     mag_re = _MAGNITUDE[lang]
@@ -708,6 +729,11 @@ def expand_numbers(text: str, lang: str) -> str:
 
 
 def expand_symbols(text: str, lang: str) -> str:
+    ml = _ml(lang)
+    if ml:
+        from . import multilang
+
+        return multilang.expand_symbols_ml(text, ml)
     many = _DEGREE[lang][1]
 
     def degrees(m: re.Match) -> str:
@@ -742,6 +768,11 @@ def heading_to_speech(text: str, lang: str) -> str:
     "Chapter", only values up to 100 count, and an English bare "I" needs
     punctuation after it, so "I Remember Mama" or "DIX ANS" stay words.
     """
+    ml = _ml(lang)
+    if ml:
+        from . import multilang
+
+        return multilang.heading_to_speech_ml(text, ml)
     t = text.strip()
     m = _HEADING_NUM.match(t)
     if m:
@@ -771,6 +802,11 @@ def normalize_paragraph(text: str, lang: str, rules: Rules | None = None, is_hea
     is_section_opening marks the first body paragraph of a section, the only
     place where books set the opening words in small caps ("HAPPY for all").
     """
+    ml = _ml(lang)
+    if ml:
+        from . import multilang
+
+        return multilang.normalize_paragraph_ml(text, ml, rules, is_heading, is_section_opening)
     lang = "fr" if lang == "fr" else "en"
     t = cleanup(text)
     if not t:

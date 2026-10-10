@@ -20,6 +20,10 @@ enum BookBlocker: Hashable, Sendable {
     /// A non-commercial engine's licence has not been acknowledged and cannot be shown yet: the engine
     /// list (which holds the licence) is not loaded (`AppModel.licenseWaitsForEngineList`).
     case licenseNotShownYet
+    /// The book's language is a registry language that is switched off (Settings > Languages).
+    case languageOff(language: String)
+    /// The language is on, but no installed engine speaks it: `engine` says which to install and its size.
+    case languageNotReady(language: String, engine: String)
 
     var message: String {
         switch self {
@@ -35,6 +39,10 @@ enum BookBlocker: Hashable, Sendable {
         case .licenseNotShownYet:
             return "This engine is for non-commercial use only, and its licence is shown before the first use. "
                 + "Waiting for the engine list to load."
+        case .languageOff(let language):
+            return "This book is in \(language), which is off. Add \(language) to choose a narrator and convert it."
+        case let .languageNotReady(language, engine):
+            return "\(language) needs \(engine). Download it in Models first; nothing is downloaded until you choose to."
         }
     }
 
@@ -42,8 +50,8 @@ enum BookBlocker: Hashable, Sendable {
     var fixTitle: String? {
         switch self {
         case .noVoice, .voiceNotInstalled: return "Choose Voice…"
-        case .modelMissing: return "Open Models"
-        case .noSelection, .licenseNotShownYet: return nil
+        case .modelMissing, .languageNotReady: return "Open Models"
+        case .noSelection, .licenseNotShownYet, .languageOff: return nil
         }
     }
 
@@ -51,8 +59,8 @@ enum BookBlocker: Hashable, Sendable {
     var fixDestination: SidebarItem? {
         switch self {
         case .noVoice, .voiceNotInstalled: return .voices
-        case .modelMissing: return .models
-        case .noSelection, .licenseNotShownYet: return nil
+        case .modelMissing, .languageNotReady: return .models
+        case .noSelection, .licenseNotShownYet, .languageOff: return nil
         }
     }
 }
@@ -63,6 +71,8 @@ enum BookVoiceWarning: Hashable, Sendable {
     case engineLanguage(engineName: String, language: String)
     /// The preset or cloned voice speaks another language than the book.
     case voiceLanguage(voiceName: String, voiceLanguage: String, bookLanguage: String)
+    /// A preset of another language that the engine lists as able to speak the book's language with an accent.
+    case voiceAccent(voiceName: String, voiceLanguage: String, bookLanguage: String)
 
     var message: String {
         switch self {
@@ -71,6 +81,9 @@ enum BookVoiceWarning: Hashable, Sendable {
         case let .voiceLanguage(voice, voiceLanguage, bookLanguage):
             return "\(voice) is a\(Self.article(for: voiceLanguage)) \(Formatters.languageName(voiceLanguage)) voice "
                 + "and this book is in \(Formatters.languageName(bookLanguage))."
+        case let .voiceAccent(voice, voiceLanguage, bookLanguage):
+            return "\(voice) is a\(Self.article(for: voiceLanguage)) \(Formatters.languageName(voiceLanguage)) voice that speaks "
+                + "\(Formatters.languageName(bookLanguage)) with an accent."
         }
     }
 
@@ -268,15 +281,10 @@ extension AppModel {
     /// this Mac has no measurement yet). Measured speeds always take precedence.
     static let bookSlowEngines: Set<String> = ["fish"]
 
-    /// Languages offered in the book's language picker: every language an engine speaks plus the book's
-    /// own, sorted by English name. English and French when the engines are not loaded yet.
+    /// Languages offered in the book's language picker: the enabled languages (Settings > Languages; English and
+    /// French until the list is loaded) plus the book's own, sorted by English name.
     var bookLanguageChoices: [String] {
-        var codes = engines.flatMap(\.languages)
-        if codes.isEmpty { codes = ["en", "fr"] }
-        if let draft { codes += [draft.info.language, draft.language] }
-        var seen = Set<String>()
-        return codes.filter { seen.insert($0).inserted }
-            .sorted { Formatters.languageName($0) < Formatters.languageName($1) }
+        languageCodes(includingBook: draft).sorted { Formatters.languageName($0) < Formatters.languageName($1) }
     }
 
     /// The engine card of the chosen voice.
@@ -287,6 +295,7 @@ extension AppModel {
     /// The first problem that stops a sample (`forConversion: false`) or a conversion of the current book.
     /// Model and voice checks only apply once the model and voice lists are loaded.
     func bookBlocker(voice: VoiceSelection?, forConversion: Bool) -> BookBlocker? {
+        if let draft, let blocker = bookLanguageBlocker(for: draft.language) { return blocker }
         guard let voice else { return .noVoice }
         if let status = models.first(where: { $0.engine == voice.engineId }), !status.installed {
             let name = engineList?.engine(voice.engineId)?.name ?? status.name
@@ -310,12 +319,16 @@ extension AppModel {
         guard let voiceLanguage = voice.language(engines: engines, voices: voices), voiceLanguage != language else {
             return nil
         }
+        let accented = voice.presetId.map { id in
+            engine.voices.first { $0.id == id }?.speaksWithAccent(language) ?? false
+        } ?? false
         let name: String
         if let preset = voice.presetId {
             name = engine.voices.first { $0.id == preset }?.name ?? preset
         } else {
             name = voices.first { $0.id == voice.refVoiceId }?.name ?? voice.refVoiceId ?? "This voice"
         }
+        if accented { return .voiceAccent(voiceName: name, voiceLanguage: voiceLanguage, bookLanguage: language) }
         return .voiceLanguage(voiceName: name, voiceLanguage: voiceLanguage, bookLanguage: language)
     }
 

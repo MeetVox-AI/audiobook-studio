@@ -25,10 +25,15 @@ from .classify import (
     FRONT_TYPES,
     classify_section,
     detect_language,
+    is_supported_language,
     looks_like_title,
     matter_title,
     normalize_language,
+    notes_title,
+    unsupported_language_message,
 )
+from .estimate import LangSection, apply_language
+from .vocab import labelled_number
 
 EPUB_NS = "http://www.idpf.org/2007/ops"
 EPUB_TYPE = f"{{{EPUB_NS}}}type"
@@ -78,8 +83,8 @@ def _el_id(el) -> str | None:
 
 # Set by _mark_note_calls on <a>/<sup> elements that are note calls.
 _NOTE_ATTR = "data-abe-note"
-_MARKER_TEXT = re.compile(r"\[?[\d*†‡§ivx]+\]?", re.IGNORECASE)
-_SYMBOL_MARKER = re.compile(r"\[?[*†‡§]+\]?")
+_MARKER_TEXT = re.compile(r"[\[［（]?[\d*†‡§※①-⑳ivx]+[\]］）]?", re.IGNORECASE)
+_SYMBOL_MARKER = re.compile(r"\[?[*†‡§※]+\]?")
 _DIGIT_MARKER = re.compile(r"\[?\d+\]?")
 _NOTE_CLASS = re.compile(
     r"footnote|endnote|rearnote|noteref|note[-_]?(?:ref|link|call|anchor|marker)|fn[-_]?(?:ref|link|anchor)"
@@ -149,6 +154,11 @@ class _NoteIndex:
 _NOTES_HEADING = re.compile(r"\s*(?:end|foot)?\s*notes\s*[\W\d]*", re.IGNORECASE)
 
 
+def _is_notes_heading(text: str) -> bool:
+    """"Notes", "Endnotes", "Footnotes:" or the same heading in another language ("Anmerkungen", "注釈")."""
+    return bool(_NOTES_HEADING.fullmatch(text)) or notes_title(text)
+
+
 def _note_index(docs: list[tuple[str, object]], extra_docs=(), toc_ids=frozenset()) -> _NoteIndex:
     """Ids and links of the reading-order documents, plus those of extra_docs.
 
@@ -163,7 +173,7 @@ def _note_index(docs: list[tuple[str, object]], extra_docs=(), toc_ids=frozenset
                 continue
             if first_heading and _local(el.tag) in HEADING_TAGS:
                 first_heading = False
-                if _NOTES_HEADING.fullmatch(_clean("".join(el.itertext()))):
+                if _is_notes_heading(_clean("".join(el.itertext()))):
                     idx.notes_files.add(fn)
             eid = _el_id(el)
             if eid:
@@ -268,7 +278,7 @@ def _contents_entry(a, text: str, heading, fn: str, file: str, target, idx: _Not
 
 
 # A note call directly follows sentence punctuation or a closing quote ("born.¹").
-_CALL_AFTER = set(".,;:!?…\"'”’»")
+_CALL_AFTER = set(".,;:!?…\"'”’»。！？、，；：」』）》〉।؟،؛")
 
 
 def _texts_reversed(node):
@@ -412,7 +422,7 @@ _SKIP_CLASS_WORD = re.compile(r"caption(?!less)|pagenum|pageno(?![a-z])|page-num
 # "AfterCaptionText" (the paragraph after a caption).
 _CONTENT_CLASS = re.compile(r"[-_](?:before|after|inside|avoid)$|^no[-_]?page[-_]?break|captioned|aftercaption")
 # A decorative first letter, possibly with its opening quote: "W", "“I", "«L".
-_DROP_CAP = re.compile(r"^[\"'“‘«„]?\s?[A-Za-zÀ-ÿ]{1,3}[\"'”’»]?$")
+_DROP_CAP = re.compile(r"^[\"'“‘«„]?\s?[A-Za-zÀ-ÿЀ-ӿ]{1,3}[\"'”’»]?$")
 
 
 def _skip_class(cls: str) -> bool:
@@ -488,11 +498,13 @@ def _inline_text(el) -> str:
 
 
 _WS = re.compile(r"\s+")
+_BIDI_CONTROLS = re.compile("[\u200e\u200f\u202a-\u202e\u2066-\u2069\u061c]")
 
 
 def _clean(text: str) -> str:
     text = text.replace("­", "")  # soft hyphen
     text = text.replace("​", "").replace("﻿", "")
+    text = _BIDI_CONTROLS.sub("", text)  # invisible direction marks of right-to-left text
     return _WS.sub(" ", text).strip()
 
 
@@ -774,10 +786,13 @@ def _to_int(token: str) -> int | None:
 
 def _number_of(title: str) -> tuple[str, int] | None:
     m = _NUMBERED.match(title or "")
-    if not m:
-        return None
-    n = _to_int(m.group(2))
-    return ((m.group(1) or "").lower(), n) if n else None
+    if m:
+        n = _to_int(m.group(2))
+        return ((m.group(1) or "").lower(), n) if n else None
+    # "Capítulo 3", "Kapitel IV", "Глава 5", "第三章", "제2장", "الفصل الأول", "अध्याय 4": the label
+    # (folded, or the counter 章/장) tells which numbering a heading belongs to
+    hit = labelled_number(title or "")
+    return (hit[1], hit[2]) if hit else None
 
 
 def _already_cut(events, cut_at, i: int, floor: int) -> bool:
@@ -885,7 +900,7 @@ def _to_section(raw: dict, index: int) -> Section:
     sec_title = ": ".join(parts) or heading or _matter_label(raw["types"]) or (paragraphs[0][:60] if paragraphs else "")
     sec_title = sec_title or f"Section {index + 1}"
     first = blocks[0]
-    sec = Section(
+    sec = LangSection(
         index=index,
         title=sec_title,
         kind="chapter",
@@ -920,8 +935,7 @@ def read_epub(path: str | Path) -> Book:
     warn: list[str] = []
     book_title = _first_meta(book, "title") or path.stem
     author = _first_meta(book, "creator") or "Unknown"
-    lang_raw = _first_meta(book, "language")
-    lang_meta = normalize_language(lang_raw)
+    lang_meta = _language_meta(book)
 
     # Spine documents in reading order (non-linear items such as note pages skipped).
     spine_items = []
@@ -1135,6 +1149,9 @@ def read_epub(path: str | Path) -> Book:
         if detected and detected != language:
             warn.append(f"Metadata says '{language}' but the text looks like '{detected}'.")
 
+    if not is_supported_language(language):
+        warn.append(unsupported_language_message(language))
+
     cover = _cover(book)
     if cover is None:
         warn.append("No cover image found; the first page will not be used for EPUBs.")
@@ -1142,7 +1159,7 @@ def read_epub(path: str | Path) -> Book:
     if not any(s.include for s in sections):
         warn.append("No section was selected automatically; please choose sections manually.")
 
-    return Book(
+    book_obj = Book(
         source_path=str(path),
         format="epub",
         title=_clean(book_title),
@@ -1160,6 +1177,21 @@ def read_epub(path: str | Path) -> Book:
             "toc_entries": len(toc),
         },
     )
+    apply_language(book_obj)  # listening-time estimates follow the language
+    return book_obj
+
+
+def _language_meta(book: epub.EpubBook) -> str | None:
+    """The language code of the first dc:language that names a language ("und" and junk are skipped)."""
+    try:
+        vals = book.get_metadata("DC", "language")
+    except Exception:
+        return None
+    for val, _attrs in vals or []:
+        code = normalize_language(re.sub(r"<[^>]+>", "", str(val or "")).strip())
+        if code:
+            return code
+    return None
 
 
 def _first_meta(book: epub.EpubBook, name: str) -> str | None:

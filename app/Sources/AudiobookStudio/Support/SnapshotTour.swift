@@ -107,6 +107,13 @@ enum SnapshotTour {
         NSApp.terminate(nil)
     }
 
+    /// A Kokoro preset that reads `language` (the American English default when Kokoro has none).
+    private static func snapshotPreset(for language: String, model: AppModel) -> String {
+        if language == "en" { return "af_heart" }
+        return model.engineList?.engine("kokoro")?.voices.first { $0.lang == language }?.id
+            ?? (language == "fr" ? "ff_siwis" : "af_heart")
+    }
+
     /// End-to-end through the app: sample, then a detached one-chapter conversion followed to the end.
     private static func convertTour(model: AppModel, dir: URL, report: inout [String: Any], shots: inout [String]) async {
         guard var draft = model.draft else { report["action_error"] = "no book open"; return }
@@ -117,7 +124,7 @@ enum SnapshotTour {
         // AUDIOBOOK_STUDIO_SNAPSHOT_PRESET picks another Kokoro preset (e.g. one not in the sentence cache, so the
         // conversion really narrates and the progress screen can be captured).
         let preset = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_PRESET"].flatMap { $0.isEmpty ? nil : $0 }
-        let voice = VoiceSelection(engineId: "kokoro", presetId: preset ?? (draft.language == "fr" ? "ff_siwis" : "af_heart"))
+        let voice = VoiceSelection(engineId: "kokoro", presetId: preset ?? snapshotPreset(for: draft.language, model: model))
         model.voiceSelection = voice
         model.selection = .newBook
 
@@ -201,7 +208,7 @@ enum SnapshotTour {
         let control = segmentedControl(in: window.contentView?.superview ?? window.contentView)
         for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (index, section) in ["General", "Voices", "Storage", "About"].enumerated() {
+            for (index, section) in ["General", "Voices", "Languages", "Storage", "About"].enumerated() {
                 if let control, index < control.segmentCount {
                     control.selectedSegment = index
                     control.sendAction(control.action, to: control.target)

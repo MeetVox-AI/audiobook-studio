@@ -92,6 +92,10 @@ ScrollView {
 - **Job done**: celebratory but calm header (green check with a symbol effect), stat tiles, primary
   "Play" and "Open in Books" buttons.
 - **Jobs / Models / Benchmark / Settings**: list rows as cards with hover, state chips, consistent headers.
+- **Settings > Languages**: one grouped-form row per registry language (native name headline, English name, an
+  On/Off `Chip`, a one-line cost, a capsule Add / Remove button). A language no installed engine speaks shows the
+  engine to install and an "Open Models" button. The Book screen shows `BookLanguageBanner` (an `InlineBanner`
+  with an "Add <language>" button) when the book's language is off.
 - **Sidebar**: standard source-list glass sidebar; job rows with a mini progress ring and state color.
 
 ## Dark mode: no purple text

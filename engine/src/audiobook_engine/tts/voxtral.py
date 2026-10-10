@@ -15,6 +15,7 @@ import unicodedata
 
 import numpy as np
 
+from ..audio.validate import seconds_per_char
 from .base import EngineError, EngineSpec, Voice, VoiceChoice, check_preset
 
 CHECKPOINT = "mlx-community/Voxtral-4B-TTS-2603-mlx-4bit"
@@ -23,10 +24,10 @@ SPEC = EngineSpec(
     id="voxtral",
     name="Voxtral TTS 4B",
     checkpoint=CHECKPOINT,
-    languages=("en", "fr"),
+    languages=("en", "fr", "es", "de", "it", "pt", "nl", "hi", "ar"),
     license="CC BY-NC 4.0",
     noncommercial=True,
-    chunk_cap={"en": 400, "fr": 400},
+    chunk_cap={"en": 400, "fr": 400, "es": 400, "de": 400, "it": 400, "pt": 400, "nl": 400, "hi": 300, "ar": 300},
     min_chunk=12,
     batch_size=1,
     supports_presets=True,
@@ -42,8 +43,21 @@ SPEC = EngineSpec(
         Voice("casual_female", "Casual female", "en", "female", "English"),
         Voice("casual_male", "Casual male", "en", "male", "English"),
         Voice("cheerful_female", "Cheerful female", "en", "female", "English"),
+        Voice("es_female", "Spanish female", "es", "female", "Spanish"),
+        Voice("es_male", "Spanish male", "es", "male", "Spanish"),
+        Voice("de_female", "German female", "de", "female", "German"),
+        Voice("de_male", "German male", "de", "male", "German"),
+        Voice("it_female", "Italian female", "it", "female", "Italian"),
+        Voice("it_male", "Italian male", "it", "male", "Italian"),
+        Voice("pt_female", "Portuguese female", "pt", "female", "Portuguese"),
+        Voice("pt_male", "Portuguese male", "pt", "male", "Portuguese"),
+        Voice("nl_female", "Dutch female", "nl", "female", "Dutch"),
+        Voice("nl_male", "Dutch male", "nl", "male", "Dutch"),
+        Voice("hi_female", "Hindi female", "hi", "female", "Hindi"),
+        Voice("hi_male", "Hindi male", "hi", "male", "Hindi"),
+        Voice("ar_male", "Arabic male", "ar", "male", "Arabic", "The only Arabic voice"),
     ],
-    notes="Native French presets. Non-commercial license: personal use only.",
+    notes="Native presets in nine languages. Non-commercial license: personal use only.",
 )
 
 _DOUBLE = re.compile(r"[\"«»“”„]")
@@ -169,7 +183,7 @@ class VoxtralEngine:
                 # Nothing to say (a paragraph that is only "»", or only punctuation once quotes are stripped).
                 out.append(np.zeros(0, np.float32))
                 continue
-            max_tokens = int(max(60, 2.5 * len(t) * 0.062 / 0.08))  # 80 ms frames
+            max_tokens = int(max(60, 2.5 * len(t) * seconds_per_char(lang) / 0.08))  # 80 ms frames
             try:
                 parts = [np.asarray(r.audio, np.float32).reshape(-1)
                          for r in self.model.generate(text=clean, voice=voice.preset, max_tokens=max_tokens)]

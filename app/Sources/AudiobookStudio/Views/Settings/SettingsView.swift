@@ -27,6 +27,7 @@ struct SettingsView: View {
             switch section {
             case .general: GeneralSettingsTab()
             case .voices: VoiceSettingsTab()
+            case .languages: LanguageSettingsTab()
             case .storage: StorageSettingsTab()
             case .about: AboutSettingsTab()
             }
@@ -38,13 +39,14 @@ struct SettingsView: View {
 
 /// The sections of the Settings window.
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case general, voices, storage, about
+    case general, voices, languages, storage, about
     var id: Self { self }
 
     var title: String {
         switch self {
         case .general: return "General"
         case .voices: return "Voices"
+        case .languages: return "Languages"
         case .storage: return "Storage"
         case .about: return "About"
         }
@@ -392,6 +394,174 @@ private struct DefaultVoicePicker: View {
                 if let current = model.settings.defaultVoices[language], OpsNarratorChoice.key(current) == id { return }
                 model.settings.defaultVoices[language] = choice.selection
             })
+    }
+}
+
+// MARK: - Languages
+
+/// The 13 languages with what each costs: On (voices on disk) or Off (voices to download), Add / Remove, and for
+/// a language no installed engine can speak, which engine to install (never downloaded without a click).
+private struct LanguageSettingsTab: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Form {
+            Section {
+                if model.languageRows.isEmpty {
+                    if let error = model.errors[.languages] {
+                        OpsErrorBox(error: error)
+                    }
+                    Label {
+                        Text(model.loading.contains(.languages) ? "Loading the languages…"
+                                                                : "Languages appear once the engine is reachable.")
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                ForEach(model.languageRows) { row in
+                    LanguageRow(row: row) {
+                        model.selection = .models
+                        WindowActions.showMainWindow(openWindow: openWindow)
+                    }
+                }
+            } header: {
+                Text("Languages")
+            } footer: {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Text("English and French are on by default. Any other language is added only when you choose it, here or from a book in that language.")
+                    Text("The voice models are shared by every language, so a language costs only its small reference voices. Nothing is downloaded unless you choose it: models are downloaded from Models.")
+                }
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .modifier(SettingsFormStyle())
+        .task { await model.refreshLanguages() }
+    }
+}
+
+/// One language: names, state, cost, and the Add / Remove button.
+private struct LanguageRow: View {
+    @Environment(AppModel.self) private var model
+    let row: LanguageRowState
+    let openModels: () -> Void
+    @State private var confirmRemoval = false
+
+    private var info: LanguageInfo { row.info }
+    private var download: LanguageDownload? { model.languageDownloads[row.code] }
+    private var isRemoving: Bool { model.languageRemovals.contains(row.code) }
+    private var isLastOn: Bool { row.isOn && model.enabledLanguageCodes.count <= 1 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Space.s) {
+            HStack(alignment: .top, spacing: Theme.Space.m) {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    VoiceFlowLayout(spacing: Theme.Space.s, lineSpacing: Theme.Space.xs) {
+                        Text(info.native)
+                            .font(.headline)
+                            .multilineTextAlignment(.leading)
+                        if info.native != info.name {
+                            Text(info.name)
+                                .foregroundStyle(.secondary)
+                        }
+                        if row.isOn {
+                            Chip(text: "On", systemImage: "checkmark.circle.fill", tint: Theme.success)
+                        } else {
+                            Chip(text: "Off", systemImage: "circle.dashed", tint: .secondary)
+                        }
+                    }
+                    Text(statusLine)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(accessibilitySummary)
+                action
+            }
+            if let need = row.need {
+                VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                    Label {
+                        Text(need)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "exclamationmark.circle")
+                            .foregroundStyle(ReadableForeground(Theme.warning))
+                    }
+                    .font(.callout)
+                    Text("Nothing is downloaded until you choose to.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Open Models", action: openModels)
+                        .controlSize(.small)
+                        .accessibilityLabel("Open Models to install the engine \(info.name) needs")
+                }
+            }
+            if let error = model.languageErrors[row.code] {
+                OpsErrorBox(error: error) { model.clearLanguageMessages(row.code) }
+            }
+            if let result = model.languageResults[row.code] {
+                SettingsSuccessLabel(text: result.summary(languageName: info.name))
+                ForEach(result.notes, id: \.self) { note in
+                    Label {
+                        Text(note)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "info.circle")
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, Theme.Space.xs)
+        .confirmationDialog("Remove \(info.name)?", isPresented: $confirmRemoval, titleVisibility: .visible) {
+            Button("Remove \(info.name)", role: .destructive) {
+                Task { try? await model.removeLanguage(row.code) }
+            }
+            .accessibilityLabel("Remove \(info.name) and delete its voices")
+            Button("Cancel", role: .cancel) {}
+                .accessibilityLabel("Keep \(info.name)")
+        } message: {
+            Text(row.removalMessage)
+        }
+    }
+
+    private var statusLine: String {
+        if let download { return download.statusText }
+        if isRemoving { return "Removing the voices of \(info.name)…" }
+        return row.detail
+    }
+
+    private var accessibilitySummary: String {
+        "\(info.name), \(info.native), \(row.isOn ? "on" : "off"). \(statusLine)"
+    }
+
+    @ViewBuilder
+    private var action: some View {
+        if download != nil || isRemoving {
+            ProgressView()
+                .controlSize(.small)
+                .accessibilityLabel(download != nil ? "Adding \(info.name)" : "Removing \(info.name)")
+        } else if row.isOn {
+            Button("Remove") { confirmRemoval = true }
+                .disabled(model.isChangingLanguage || isLastOn)
+                .help(isLastOn ? "At least one language must stay on." : "Turns \(info.name) off and deletes its voices")
+                .accessibilityLabel("Remove \(info.name)")
+        } else {
+            Button("Add") { Task { try? await model.addLanguage(row.code) } }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isChangingLanguage)
+                .help("Turns \(info.name) on and downloads its reference voices")
+                .accessibilityLabel("Add \(info.name)")
+        }
     }
 }
 

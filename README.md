@@ -20,7 +20,7 @@
 |---|---|
 | 🔒 **Private by design** | Narration runs on your Mac's GPU with open AI voice models. After the one-time model download it works offline. Nothing is uploaded, ever. |
 | 🎧 **A real audiobook, not a long MP3** | One `.m4b` with chapter markers, cover art, title and author, normalised loudness and the audiobook tag, checked with ffprobe after every conversion, so audiobook players can show chapters and your cover. |
-| 🗣️ **Voices you can actually pick** | Four engines, English and French, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
+| 🗣️ **Voices you can actually pick** | Four engines, **13 languages**, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
 | ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
 | ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
 | 🔄 **Keeps itself up to date** | The app checks for new versions daily and installs them in the background (signed updates only). You can turn it off in Settings. |
@@ -42,15 +42,27 @@
 <img src="docs/images/voices.png" alt="Voice browser: engines, voices, preview and compare" width="860">
 </div>
 
+## Languages
+
+English and French are on by default. **Add others in Settings → Languages, only when you need them**: a language costs just its small reference voices (about 1–2 MB), because the voice models are shared by all languages and are installed once. The app tells you if a language needs an engine you have not installed (and its size) and never downloads a model without your say-so. Removing a language deletes its voices.
+
+| | Languages |
+|---|---|
+| Qwen3-TTS (default engine) | English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean |
+| Voxtral | the above Latin-script ones plus Dutch, Hindi and Arabic |
+| Kokoro (fast drafts) | English, French, Spanish, Italian, Portuguese, Hindi |
+
+Every language was checked by narrating a test book and transcribing it back with Whisper. The text rules (numbers, abbreviations, chapter headings) for the non-English/French languages were written without native-speaker review, so please report anything that sounds wrong.
+
 ## How fast is it?
 
 Measured on an Apple M4 Pro (48 GB), not quoted from a vendor. "×" means times faster than listening.
 
 | Engine | Best for | Speed | Licence |
 |---|---|---|---|
-| **Kokoro 82M** | Fast drafts, English | ≈ 14–18× — a 6½-hour French novel in 32 minutes | Apache-2.0 |
-| **Qwen3-TTS 1.7B** *(default)* | Best open quality, English, French by cloning | ≈ 3–5× with preset voices, ≈ 2.4× when cloning, speech check included | Apache-2.0 |
-| **Voxtral 4B** | Native French presets | ≈ 1.7–1.9× | CC BY-NC 4.0 (personal use) |
+| **Kokoro 82M** | Fast drafts: English, French, Spanish, Italian, Portuguese, Hindi | ≈ 14–18× — a 6½-hour French novel in 32 minutes | Apache-2.0 |
+| **Qwen3-TTS 1.7B** *(default)* | Best open quality: English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean | ≈ 3–5× with preset voices, ≈ 2.4× when cloning, speech check included | Apache-2.0 |
+| **Voxtral 4B** | Native presets in nine languages, including Dutch, Hindi and Arabic | ≈ 1.7–1.9× | CC BY-NC 4.0 (personal use) |
 | **Fish S2 Pro** | Highest-fidelity cloning | ≈ 0.56× — slower than real time | Non-commercial |
 
 Your Mac measures itself, so the app's estimates are for *your* machine.
@@ -113,9 +125,9 @@ Every command prints JSON (one object per line). Re-running an interrupted conve
 
 | Engine | Languages | Voices | Licence | Speed on an M4 Pro* |
 |---|---|---|---|---|
-| Kokoro 82M | en, fr | 20 English presets, 1 French (draft quality) | Apache-2.0 | ≈ 14–18× real time |
-| Qwen3-TTS 1.7B (default) | en, fr (+8) | Ryan, Aiden (English); any voice by cloning | Apache-2.0 | ≈ 3–5× presets, ≈ 2.4× cloning |
-| Voxtral 4B | en, fr (+7) | French and English presets | CC BY-NC 4.0 (personal use) | ≈ 1.7–1.9× real time |
+| Kokoro 82M | en, fr, es, it, pt, hi | 20 English presets; draft-quality voices for the others | Apache-2.0 | ≈ 14–18× real time |
+| Qwen3-TTS 1.7B (default) | en, fr, es, de, it, pt, ru, zh, ja, ko | Native presets in English, Chinese, Japanese, Korean; any language by cloning | Apache-2.0 | ≈ 3–5× presets, ≈ 2.4× cloning |
+| Voxtral 4B | en, fr, es, de, it, pt, nl, hi, ar | Presets in all nine (Arabic: one male voice) | CC BY-NC 4.0 (personal use) | ≈ 1.7–1.9× real time |
 | Fish S2 Pro | en, fr (+78) | cloning only | Fish Audio Research Licence (non-commercial) | ≈ 0.56× (slower than real time) |
 
 \* Measured on the author's machine with the speech check on. Your Mac measures itself: run `make bench`, or make
@@ -166,9 +178,9 @@ Use Audiobook Studio lawfully: convert only books you own or have the right to u
 ## Limitations
 
 - Scanned PDFs (images without a text layer) need OCR first; they are rejected with a clear message.
-- English and French only. Other languages are detected and reported as unsupported.
+- Thirteen languages (listed above). Other languages are detected and reported as unsupported.
 - No speaker casting (one narrator per book) in this version.
-- Kokoro's single French voice is draft quality; prefer Qwen3 with a French reference voice.
+- Kokoro's non-English voices are draft quality; prefer Qwen3 with a reference voice in that language.
 
 ## Releasing (maintainers)
 

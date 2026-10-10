@@ -40,7 +40,16 @@ struct VoiceOption: Identifiable, Hashable, Sendable {
     /// The `voices list` entry of a reference voice.
     var entry: VoiceEntry?
 
+    /// Other languages a preset can speak with an accent (the engine's `also`).
+    var alsoLanguages: [String] = []
+
     var isReference: Bool { kind != .preset }
+
+    /// True when the voice speaks `language` natively.
+    func isNative(to language: String) -> Bool { self.language == language }
+
+    /// True when the voice is another language's but can speak `language` with an accent.
+    func speaksWithAccent(_ language: String) -> Bool { self.language != language && alsoLanguages.contains(language) }
 
     /// True when the voice and at least one engine that can use it (restricted to `engineFilter`) allow
     /// commercial use.
@@ -78,7 +87,7 @@ enum VoiceCatalog {
                     id: "preset:\(engine.id):\(preset.id)", voiceId: preset.id, name: preset.name, language: preset.lang,
                     gender: preset.gender, accent: preset.accent.flatMap(nonEmpty), summary: preset.note.flatMap(nonEmpty),
                     kind: .preset, engineIds: [engine.id], license: engine.license, voiceAllowsCommercialUse: true,
-                    installed: true, entry: nil))
+                    installed: true, entry: nil, alsoLanguages: preset.also ?? []))
             }
         }
         let cloning = engines.filter(\.supportsCloning).map(\.id)
@@ -95,7 +104,10 @@ enum VoiceCatalog {
     }
 
     /// Browser sections: the user's clips, the reference library, then one group per engine's presets.
-    static func groups(_ options: [VoiceOption], engines: [EngineInfo]) -> [VoiceOptionGroup] {
+    /// With `accentLanguage` (the language being browsed), presets of another language that speak it with an
+    /// accent follow the native groups in groups of their own ("<Engine> · speaks Spanish with an accent").
+    static func groups(_ options: [VoiceOption], engines: [EngineInfo], accentLanguage: String? = nil) -> [VoiceOptionGroup] {
+        let isAccented: (VoiceOption) -> Bool = { o in accentLanguage.map(o.speaksWithAccent) ?? false }
         var groups: [VoiceOptionGroup] = []
         let clips = options.filter { $0.kind == .userClip }
         if !clips.isEmpty { groups.append(VoiceOptionGroup(id: "user", title: "Your voices", options: clips)) }
@@ -104,9 +116,19 @@ enum VoiceCatalog {
             groups.append(VoiceOptionGroup(id: "library", title: "Reference voices for cloning", options: library))
         }
         for engine in engines {
-            let presets = options.filter { $0.kind == .preset && $0.engineIds.first == engine.id }
+            let presets = options.filter { $0.kind == .preset && $0.engineIds.first == engine.id && !isAccented($0) }
             if !presets.isEmpty {
                 groups.append(VoiceOptionGroup(id: "preset:\(engine.id)", title: "\(engine.name) presets", options: presets))
+            }
+        }
+        if let accentLanguage {
+            let name = Formatters.languageName(accentLanguage)
+            for engine in engines {
+                let accented = options.filter { $0.kind == .preset && $0.engineIds.first == engine.id && isAccented($0) }
+                if !accented.isEmpty {
+                    groups.append(VoiceOptionGroup(id: "accent:\(engine.id)",
+                                                   title: "\(engine.name) · speaks \(name) with an accent", options: accented))
+                }
             }
         }
         return groups
@@ -193,7 +215,7 @@ struct VoiceFilter: Hashable, Sendable {
     var isNarrowed: Bool { self != VoiceFilter() }
 
     func matches(_ option: VoiceOption, engines: [EngineInfo], bookLanguage: String?) -> Bool {
-        if let code = languageCode(bookLanguage: bookLanguage), option.language != code { return false }
+        if let code = languageCode(bookLanguage: bookLanguage), option.language != code, !option.speaksWithAccent(code) { return false }
         if let gender, option.gender?.lowercased() != gender { return false }
         if let engineId, !option.engineIds.contains(engineId) { return false }
         switch license {
@@ -243,7 +265,10 @@ struct VoiceEngineSummary: Hashable, Sendable {
         return VoiceText.slowWarning(realtimeX: x)
     }
 
-    var languagesText: String { VoiceText.languages(engine.languages) }
+    /// The languages to list on the card: the engine's, restricted to the enabled ones when `shownLanguages` is set.
+    var shownLanguages: [String]?
+
+    var languagesText: String { VoiceText.languages(shownLanguages ?? engine.languages) }
     var capabilitiesText: String { VoiceText.capabilities(engine) }
 }
 
@@ -293,11 +318,14 @@ struct AddVoiceForm: Hashable, Sendable {
     var transcript = ""
     var hasRights = false
 
-    /// Languages `voices add` accepts.
-    static let languages = ["en", "fr"]
+    /// Languages the form offers: the enabled ones (`AppModel.enabledLanguageCodes`).
+    var languages: [String]
 
-    init(language: String? = nil) {
-        if let language, AddVoiceForm.languages.contains(language) { self.language = language }
+    init(language: String? = nil, languages: [String] = LanguageRegistry.defaultEnabled) {
+        self.languages = languages
+        if let language, languages.contains(language) { self.language = language } else if let first = languages.first {
+            self.language = first
+        }
     }
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -312,12 +340,18 @@ struct AddVoiceForm: Hashable, Sendable {
     var missingStep: String? {
         if file == nil { return "Choose a recording." }
         if trimmedName.isEmpty { return "Give the voice a name." }
-        if !AddVoiceForm.languages.contains(language) { return "Choose English or French." }
+        if !languages.contains(language) { return languageMessage }
         if !hasRights { return "Confirm that you have the right to use this voice." }
         return nil
     }
 
     var canSubmit: Bool { missingStep == nil }
+
+    /// "Choose English or French." (up to three languages are named; more are described).
+    var languageMessage: String {
+        guard languages.count <= 3, !languages.isEmpty else { return "Choose one of the languages that are turned on in Settings." }
+        return "Choose " + VoiceText.list(languages.map(Formatters.languageName), conjunction: "or") + "."
+    }
 
     /// Picks a file and, when the name is still empty, names the voice after it.
     mutating func chooseFile(_ url: URL) {
@@ -467,17 +501,18 @@ extension AppModel {
     var filteredVoiceOptions: [VoiceOption] {
         let filter = voiceLab.filter
         let language = draft?.language
-        return voiceOptions.filter { filter.matches($0, engines: engines, bookLanguage: language) }
+        return voiceOptions.filter { filter.matches($0, engines: engines, bookLanguage: language) && isVoiceLanguageShown($0) }
     }
 
-    /// Languages offered by the language filter (engines and voices), English and French first.
-    var voiceLanguages: [String] {
-        let all = Set(engines.flatMap(\.languages)).union(voices.map(\.lang))
-        return all.sorted { a, b in
-            let order = ["en", "fr"]
-            let ai = order.firstIndex(of: a) ?? order.count, bi = order.firstIndex(of: b) ?? order.count
-            return ai != bi ? ai < bi : Formatters.languageName(a) < Formatters.languageName(b)
-        }
+    /// Languages offered by the language filter: the enabled ones (registry order) plus the open book's own.
+    var voiceLanguages: [String] { languageCodes(includingBook: draft) }
+
+    /// Voices of languages that are off are hidden (the user's own clips are always shown; the open book's language
+    /// counts as on). A voice of another language that speaks the browsed language with an accent stays.
+    func isVoiceLanguageShown(_ option: VoiceOption) -> Bool {
+        if option.kind == .userClip || voiceLanguages.contains(option.language) { return true }
+        guard let browsed = voiceLab.filter.languageCode(bookLanguage: draft?.language) else { return false }
+        return option.speaksWithAccent(browsed)
     }
 
     /// Display name of a voice id (preset of `engineId`, else a reference voice), for measurements.
@@ -519,7 +554,7 @@ extension AppModel {
         guard let engine = engineList?.engine(engineId) else { return nil }
         let current = voiceSelection
         if let current, current.engineId == engineId { return current }
-        let language = draft?.language ?? current?.language(engines: engines, voices: voices) ?? "en"
+        let language = draft?.language ?? current?.language(engines: engines, voices: voices) ?? fallbackLanguage
         if let saved = settings.defaultVoices[language], saved.engineId == engineId,
            saved.fits(language: language, engines: engines, voices: voices) {
             return saved
@@ -561,7 +596,8 @@ extension AppModel {
             engine: engine, install: install, selection: selection, rate: measured?.rate,
             rateIsExactVoice: measured?.exactVoice ?? false,
             rateVoiceName: measured.map { voiceDisplayName(engineId: engine.id, voiceId: $0.rate.voice) },
-            bookEstimate: bookEstimate, isChosen: voiceSelection?.engineId == engine.id)
+            bookEstimate: bookEstimate, isChosen: voiceSelection?.engineId == engine.id,
+            shownLanguages: engine.languages.filter { code in enabledLanguageCodes.contains(code) || code == draft?.language })
     }
 
     // MARK: Licence gate

@@ -29,7 +29,8 @@ import soundfile as sf
 from . import jobs, paths
 from .audio import loudness, m4b
 from .audio.stitch import Pacing, assemble
-from .audio.validate import check_chunk
+from . import languages
+from .audio.validate import check_chunk, seconds_per_char
 from .cache import ChunkCache, chunk_key
 from .ingest import read_book
 from .models import Book, IngestError
@@ -88,8 +89,16 @@ class SectionPlan:
 
 # ----------------------------------------------------------------------------- planning
 
+def _warmup_sentence(lang: str) -> str:
+    try:
+        return languages.get(lang).warmup or languages.get("en").warmup
+    except KeyError:
+        return languages.get("en").warmup
+
+
 def resolve_lang(book: Book, opts: ConvertOptions) -> str:
     lang = opts.lang or book.language
+    lang = languages.normalize_code(lang) or lang  # "pt-BR" -> "pt"; unknown codes fall through to the error below
     spec = specs()[opts.engine]
     if lang not in spec.languages:
         raise EngineError(f"{spec.name} does not support language '{lang}'. Supported: {', '.join(spec.languages)}.")
@@ -120,7 +129,7 @@ def select_sections(book: Book, wanted: list[int] | None) -> list[int]:
 
 def intro_text(book: Book, lang: str) -> str:
     if book.author and book.author != "Unknown":
-        return f"{book.title}. By {book.author}." if lang == "en" else f"{book.title}, de {book.author}."
+        return languages.announce(lang, book.title, book.author)
     return f"{book.title}."
 
 
@@ -130,13 +139,13 @@ def plan_book(book: Book, opts: ConvertOptions, lang: str, sections: list[int]) 
     plans: list[SectionPlan] = []
     if opts.intro:
         text = normalize_paragraph(intro_text(book, lang), lang, opts.rules)
-        plans.append(SectionPlan(-1, "Opening credits" if lang == "en" else "Générique",
-                                 chunk_section(-1, [text], cap, first_is_heading=True, min_chars=spec.min_chunk)))
+        plans.append(SectionPlan(-1, languages.get(lang).credits,
+                                 chunk_section(-1, [text], cap, first_is_heading=True, min_chars=spec.min_chunk, lang=lang)))
     by_index = {s.index: s for s in book.sections}
     for i in sections:
         s = by_index[i]
         paras = normalize_section(s.paragraphs, lang, s.starts_with_heading, s.title, opts.rules)
-        chunks = chunk_section(i, paras, cap, first_is_heading=True, min_chars=spec.min_chunk)
+        chunks = chunk_section(i, paras, cap, first_is_heading=True, min_chars=spec.min_chunk, lang=lang)
         if chunks:
             plans.append(SectionPlan(i, s.title, chunks))
     return plans
@@ -305,8 +314,7 @@ class Synthesizer:
         self.emit({"event": "model_loading", "engine": self.spec.id, "checkpoint": self.spec.checkpoint})
         load_s = self.engine.load(self.voice)
         t = time.perf_counter()
-        self.engine.synthesize(["This is a short warm up sentence."] if self.lang == "en"
-                               else ["Ceci est une courte phrase de préchauffage."],
+        self.engine.synthesize([_warmup_sentence(self.lang)],
                                self.voice, self.lang, self.native_speed)
         self.sample_rate = self.engine.sample_rate
         self.loaded = True
@@ -334,7 +342,7 @@ class Synthesizer:
         audios = self.engine.synthesize([c.text for c in chunks], self.voice, self.lang, self.native_speed)
         issues_all = []
         for i, (c, a) in enumerate(zip(chunks, audios)):
-            issues = check_chunk(a, self.engine.sample_rate, c.chars, self.native_speed)
+            issues = check_chunk(a, self.engine.sample_rate, c.chars, self.native_speed, lang=self.lang)
             if issues:
                 fixed, issues = self._repair(c, a, issues)
                 audios[i] = fixed
@@ -406,7 +414,7 @@ class Synthesizer:
                            "after_cer": round(best.cer, 3), "fixed": not best.bad})
                 if best_audio is not audios[i]:
                     # The issues found earlier belong to the take that was just replaced.
-                    issues_all[i] = check_chunk(best_audio, self.engine.sample_rate, c.chars, self.native_speed)
+                    issues_all[i] = check_chunk(best_audio, self.engine.sample_rate, c.chars, self.native_speed, lang=self.lang)
             audios[i] = best_audio
             if best.bad and _speakable(c.text):
                 self.qa_stats["flagged"] += 1
@@ -419,7 +427,7 @@ class Synthesizer:
         self.ensure_loaded()
         sr = self.engine.sample_rate
         if self.spec.deterministic:
-            parts = split_sentences(chunk.text)
+            parts = split_sentences(chunk.text, self.lang)
             if len(parts) > 1:
                 pieces = self.engine.synthesize(parts, self.voice, self.lang, self.native_speed)
                 gap = np.zeros(int(0.2 * sr), dtype=np.float32)
@@ -433,16 +441,16 @@ class Synthesizer:
         attempts: list[tuple[np.ndarray, list[str]]] = [(audio, issues)]
         if self.spec.deterministic:
             # Same input gives the same output: change the input by synthesising sentence by sentence.
-            parts = split_sentences(chunk.text)
+            parts = split_sentences(chunk.text, self.lang)
             if len(parts) > 1:
                 pieces = self.engine.synthesize(parts, self.voice, self.lang, self.native_speed)
                 gap = np.zeros(int(0.2 * sr), dtype=np.float32)
                 joined = np.concatenate([x for p in pieces for x in (p, gap)][:-1]) if pieces else audio
-                attempts.append((joined, check_chunk(joined, sr, chunk.chars, self.native_speed)))
+                attempts.append((joined, check_chunk(joined, sr, chunk.chars, self.native_speed, lang=self.lang)))
         else:
             for seed in (1, 2):
                 a = self.engine.synthesize([chunk.text], self.voice, self.lang, self.native_speed, seed=seed)[0]
-                attempts.append((a, check_chunk(a, sr, chunk.chars, self.native_speed)))
+                attempts.append((a, check_chunk(a, sr, chunk.chars, self.native_speed, lang=self.lang)))
                 if not attempts[-1][1]:
                     break
         best = min(attempts, key=lambda x: (len(x[1]), 0 if x[0].size else 1))
@@ -703,7 +711,7 @@ def _convert(book, book_path, opts, plans, lang, job_id, job_dir, emit, owned: s
                 todo[k] = c.chars
     todo_chars = sum(todo.values())
     prior = saved_rate(spec.id, opts.voice.label())
-    est_audio = total_chars * 0.062 / max(opts.speed, 0.1)
+    est_audio = total_chars * seconds_per_char(lang) / max(opts.speed, 0.1)
     warnings = list(book.warnings)
     if power_source() == "battery":
         warnings.append("Running on battery: plug in for long conversions (sleep is blocked only while awake).")
@@ -719,7 +727,7 @@ def _convert(book, book_path, opts, plans, lang, job_id, job_dir, emit, owned: s
     })
 
     out_dir_pre = Path(opts.out_dir).expanduser().absolute() if opts.out_dir else book_path.absolute().parent
-    check_disk_space(job_dir, out_dir_pre, todo_chars * 0.062, est_audio)
+    check_disk_space(job_dir, out_dir_pre, todo_chars * seconds_per_char(lang), est_audio)
 
     tracker = RateTracker(trim_outliers=not spec.deterministic)
     audio_tracker = RateTracker(trim_outliers=not spec.deterministic)  # audio seconds per wall second
@@ -996,7 +1004,7 @@ def sample(book_path: Path, opts: ConvertOptions, section: int | None, seconds: 
     chunks, est = [], 0.0
     for c in plan.chunks:
         chunks.append(c)
-        est += c.chars * 0.062
+        est += c.chars * seconds_per_char(lang)
         if est >= seconds:
             break
     emit = _Emitter(sink, None)
@@ -1050,7 +1058,7 @@ def _sample(book, book_path, opts, lang, all_secs, plan, chunks, out, emit) -> d
         "audio_s": round(audio_s, 1), "synth_wall_s": round(wall, 2), "chars_synthesized": chars_synth,
         "rate_cps": round(rate, 1) if rate else None,
         "realtime_x": round(audio_synth / wall, 2) if wall > 0 else None,
-        "book_chars": included, "book_est_audio_s": round(included * 0.062 / max(opts.speed, 0.1)),
+        "book_chars": included, "book_est_audio_s": round(included * seconds_per_char(lang) / max(opts.speed, 0.1)),
         "book_est_wall_s": round(included / rate) if rate else None,
         "note": "Projection from this sample; short samples run cooler than long jobs, expect it to be optimistic.",
         "qa": dict(synth.qa_stats) if synth.verifier is not None else None,

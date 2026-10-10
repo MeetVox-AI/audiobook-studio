@@ -4,37 +4,53 @@ import SwiftUI
 
 /// Colours and small rules shared by the Voices screen views.
 enum VoiceStyle {
-    /// Language-chip tint (text in the tint on a soft fill): French indigo (the app accent), English teal,
-    /// others pink. Teal and pink are deeper in light mode and lighter in dark mode, so the chip text keeps
-    /// its contrast on the card in both. The indigo is hard to read as text in dark mode: use this tint as a
-    /// foreground only through `Chip` or `ReadableForeground`, which then draw the text in the label colour.
+    /// Language-chip tint (text in the tint on a soft fill). French keeps the app's indigo, English teal; every
+    /// other registry language has a hue of its own (`hues`), and unknown codes are pink. Tints are deeper in
+    /// light mode and lighter in dark mode, so the chip text keeps its contrast on the card in both. The indigo is
+    /// hard to read as text in dark mode: use a tint as a foreground only through `Chip` or `ReadableForeground`,
+    /// which then draw the text in the label colour.
     static func tint(forLanguage code: String?) -> Color {
-        switch code?.lowercased() {
-        case "fr"?: return Theme.accent
-        case "en"?: return teal
-        case nil: return .gray
-        default: return pink
+        guard let code = code?.lowercased() else { return .gray }
+        switch code {
+        case "fr": return Theme.accent
+        case "en": return teal
+        default: return dynamicTint(hue: hues[code] ?? pinkHue)
         }
     }
 
     /// Avatar fill behind white initials, in the language's hue: deep in light and dark mode so white
     /// text on it stays above 4.5:1.
     static func avatarFill(forLanguage code: String?) -> Color {
-        switch code?.lowercased() {
-        case "fr"?: return deepIndigo
-        case "en"?: return deepTeal
-        case nil: return Color(white: 0.42)
-        default: return deepPink
+        guard let code = code?.lowercased() else { return Color(white: 0.42) }
+        switch code {
+        case "fr": return deepIndigo
+        case "en": return deepTeal
+        default: return deepColor(hue: hues[code] ?? pinkHue)
         }
+    }
+
+    /// Hue (0...1) of each registry language except English and French, spread around the colour wheel and
+    /// away from the app's indigo.
+    static let hues: [String: Double] = [
+        "es": 5, "zh": 345, "ja": 322, "ko": 285, "ru": 210, "ar": 172, "it": 135, "pt": 100, "hi": 62, "de": 40,
+        "nl": 22,
+    ].mapValues { $0 / 360 }
+
+    private static let pinkHue = 340.0 / 360
+
+    private static func dynamicTint(hue: Double) -> Color {
+        Color(nsColor: .dynamic(light: NSColor(hue: hue, saturation: 0.95, brightness: 0.50, alpha: 1),
+                                dark: NSColor(hue: hue, saturation: 0.45, brightness: 1.0, alpha: 1)))
+    }
+
+    private static func deepColor(hue: Double) -> Color {
+        Color(nsColor: NSColor(hue: hue, saturation: 0.85, brightness: 0.46, alpha: 1))
     }
 
     private static let teal = Color(nsColor: .dynamic(light: NSColor(srgbRed: 0.0, green: 0.42, blue: 0.48, alpha: 1),
                                                       dark: NSColor(srgbRed: 0.35, green: 0.78, blue: 0.86, alpha: 1)))
-    private static let pink = Color(nsColor: .dynamic(light: NSColor(srgbRed: 0.72, green: 0.06, blue: 0.32, alpha: 1),
-                                                      dark: NSColor(srgbRed: 1.0, green: 0.45, blue: 0.58, alpha: 1)))
     private static let deepIndigo = Color(.sRGB, red: 0.30, green: 0.28, blue: 0.78)
     private static let deepTeal = Color(.sRGB, red: 0.0, green: 0.42, blue: 0.48)
-    private static let deepPink = Color(.sRGB, red: 0.72, green: 0.06, blue: 0.32)
 
     /// Up to two initials from a voice name, ignoring bracketed parts: "SIWIS — studio narrator (F)" → "SS",
     /// "LibriVox reader 12205 (F)" → "LR". nil when the name has no word starting with a letter.
