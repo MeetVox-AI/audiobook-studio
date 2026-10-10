@@ -11,7 +11,7 @@
 
 ## 1. Who we are
 
-"We", "the developer" and "the app" mean the developer of Audiobook Studio, an open-source application published at https://github.com/antoine-debroye/audiobook-converter. Questions can be asked in the project's GitHub Issues. Please do not post personal information there.
+"We", "the developer" and "the app" mean the developer of Audiobook Studio, an open-source application published at https://github.com/MeetVox-AI/audiobook-studio. Questions can be asked in the project's GitHub Issues. Please do not post personal information there.
 
 ## 2. Data we do NOT collect
 

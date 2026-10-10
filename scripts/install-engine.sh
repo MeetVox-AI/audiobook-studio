@@ -1,7 +1,7 @@
 #!/bin/bash
 # Installs the Audiobook Studio engine (the local AI narration engine the app drives) for people who
 # downloaded the app from the DMG. It lives in ~/Library/Application Support/AudiobookStudio/source.
-#   curl -fsSL https://raw.githubusercontent.com/antoine-debroye/audiobook-converter/main/scripts/install-engine.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/scripts/install-engine.sh | bash
 # Environment (for testing): AUDIOBOOK_PREFIX (install folder), AUDIOBOOK_REPO (git URL or path), NO_MODELS=1.
 set -euo pipefail
 # The app runs this with a minimal PATH: make Homebrew's folders visible, and keep brew quiet and non-interactive.
@@ -9,7 +9,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" HOMEBREW_NO_AUTO_UPDATE=1 H
   HOMEBREW_NO_ANALYTICS=1 HF_HUB_DISABLE_TELEMETRY=1 DO_NOT_TRACK=1
 
 PREFIX="${AUDIOBOOK_PREFIX:-$HOME/Library/Application Support/AudiobookStudio}"
-REPO="${AUDIOBOOK_REPO:-https://github.com/antoine-debroye/audiobook-converter.git}"
+REPO="${AUDIOBOOK_REPO:-https://github.com/MeetVox-AI/audiobook-studio.git}"
 SRC="$PREFIX/source"
 MIN_FREE_GB=12
 

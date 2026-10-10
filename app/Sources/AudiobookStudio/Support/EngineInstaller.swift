@@ -139,7 +139,7 @@ final class EngineInstaller {
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("scripts/install-engine.sh")
         if FileManager.default.fileExists(atPath: checkout.path) { return checkout }
-        let remote = URL(string: "https://raw.githubusercontent.com/antoine-debroye/audiobook-converter/main/scripts/install-engine.sh")!
+        let remote = URL(string: "https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/scripts/install-engine.sh")!
         let (data, response) = try await URLSession.shared.data(from: remote)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw EngineError(message: "The setup files could not be downloaded. Check the internet connection and try again.")

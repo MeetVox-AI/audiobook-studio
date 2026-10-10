@@ -6,7 +6,7 @@
 
 **No cloud. No subscription. No per-character fees. Your books never leave your computer.**
 
-[**⬇ Download for macOS**](https://github.com/antoine-debroye/audiobook-converter/releases/latest) · Apple Silicon · macOS 26 or later · free & open source
+[**⬇ Download for macOS**](https://github.com/MeetVox-AI/audiobook-studio/releases/latest) · Apple Silicon · macOS 26 or later · free & open source
 
 <img src="docs/images/book.png" alt="Audiobook Studio: choose chapters, a narrator and hear a sample before you convert" width="860">
 
@@ -69,12 +69,12 @@ Your Mac measures itself, so the app's estimates are for *your* machine.
 
 ## Install
 
-**1. Download** the latest `AudiobookStudio-x.y.z.dmg` from the [Releases page](https://github.com/antoine-debroye/audiobook-converter/releases/latest), open it and drag **Audiobook Studio** to Applications. The app is signed with a Developer ID and notarized by Apple.
+**1. Download** the latest `AudiobookStudio-x.y.z.dmg` from the [Releases page](https://github.com/MeetVox-AI/audiobook-studio/releases/latest), open it and drag **Audiobook Studio** to Applications. The app is signed with a Developer ID and notarized by Apple.
 
 **2. Install the narration engine** (once). The app drives a local Python engine and the AI voice models, which are too large to ship inside the app. Open Terminal and paste:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/antoine-debroye/audiobook-converter/main/scripts/install-engine.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/scripts/install-engine.sh | bash
 ```
 
 It installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, sets up the engine under `~/Library/Application Support/AudiobookStudio`, and downloads the default models and four reference voices (about **12 GB**, one time). You need an Apple Silicon Mac, macOS 26 or later, and [Homebrew](https://brew.sh). Read the script first if you like: it is [short](scripts/install-engine.sh).
@@ -87,8 +87,8 @@ It installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, sets up the 
 Requirements: Apple Silicon Mac, macOS 26 or later, Xcode 26 command-line tools, Homebrew and about 12 GB free.
 
 ```bash
-git clone https://github.com/antoine-debroye/audiobook-converter.git
-cd audiobook-converter
+git clone https://github.com/MeetVox-AI/audiobook-studio.git
+cd audiobook-studio
 make setup        # installs tools, the engine, models and voices, and builds app/build/AudiobookStudio.app
 make models-all   # optional: the non-commercial engines (Voxtral, Fish S2 Pro)
 ```
