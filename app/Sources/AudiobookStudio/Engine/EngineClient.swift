@@ -7,7 +7,7 @@ enum EngineFailure: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notFound(let p): return "The audiobook engine was not found at \(p). Set its location in Settings."
+        case .notFound(let p): return "The audiobook engine was not found at \(p). To install it, run this in Terminal: curl -fsSL https://raw.githubusercontent.com/antoine-debroye/audiobook-converter/main/scripts/install-engine.sh | bash — or set its location in Settings."
         case .failed(let m, _): return m
         case .badOutput(let m): return "Unexpected engine output: \(m)"
         }
@@ -25,7 +25,8 @@ struct EngineClient: Sendable {
 
     static var defaultPath: String {
         if let p = Bundle.main.object(forInfoDictionaryKey: "AudiobookEnginePath") as? String, !p.isEmpty { return p }
-        return NSHomeDirectory() + "/Code/audiobook/engine/.venv/bin/audiobook-engine"
+        // Where scripts/install-engine.sh puts the engine for people who installed the app from the DMG.
+        return NSHomeDirectory() + "/Library/Application Support/AudiobookStudio/source/engine/.venv/bin/audiobook-engine"
     }
 
     init(path: String) { executable = URL(fileURLWithPath: path) }

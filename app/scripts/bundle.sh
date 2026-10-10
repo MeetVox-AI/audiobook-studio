@@ -25,6 +25,10 @@ xcrun actool "$APP_DIR/Assets/Assets.xcassets" --compile "$OUT/Contents/Resource
   --minimum-deployment-target 26.0 --accent-color AccentColor \
   --output-partial-info-plist "$APP_DIR/build/assets-partial.plist" --output-format human-readable-text >/dev/null
 
+# RELEASE=1 (used by scripts/release.sh) leaves the engine path out: the app then looks where
+# scripts/install-engine.sh installs it. Local builds point at this checkout's engine.
+if [[ "${RELEASE:-}" == "1" ]]; then ENGINE_KEY=""; else ENGINE_KEY="  <key>AudiobookEnginePath</key><string>$ENGINE</string>"; fi
+
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,7 +45,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
-  <key>AudiobookEnginePath</key><string>$ENGINE</string>
+$ENGINE_KEY
   <key>CFBundleDocumentTypes</key><array>
     <dict><key>CFBundleTypeName</key><string>EPUB book</string><key>CFBundleTypeRole</key><string>Viewer</string>
       <key>LSItemContentTypes</key><array><string>org.idpf.epub-container</string></array></dict>
@@ -52,5 +56,10 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc signature (local use). Set AUDIOBOOK_SIGN_ID to sign with your own identity instead.
-codesign --force --deep --sign "${AUDIOBOOK_SIGN_ID:--}" "$OUT"
+if [[ -n "${AUDIOBOOK_SIGN_ID:-}" && "$AUDIOBOOK_SIGN_ID" != "-" ]]; then
+  # A real identity: hardened runtime + secure timestamp, as notarization requires.
+  codesign --force --deep --options runtime --timestamp --sign "$AUDIOBOOK_SIGN_ID" "$OUT"
+else
+  codesign --force --deep --sign - "$OUT"
+fi
 echo "Built $OUT (engine: $ENGINE)"

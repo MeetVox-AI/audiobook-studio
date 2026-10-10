@@ -1,10 +1,88 @@
+<div align="center">
+
 # Audiobook Studio
 
-Turn EPUB and PDF books into M4B audiobooks on your Mac, narrated by AI voices that run entirely on your machine.
-Chapters, cover art and metadata are kept. Nothing is sent to the cloud: models are downloaded once, then every
-conversion runs offline on the Apple Silicon GPU (MLX).
+### Turn any EPUB or PDF into a beautifully narrated audiobook — entirely on your Mac.
 
-Two parts, one simple bridge:
+**No cloud. No subscription. No per-character fees. Your books never leave your computer.**
+
+[**⬇ Download for macOS**](https://github.com/antoine-debroye/audiobook-converter/releases/latest) · Apple Silicon · macOS 26 or later · free & open source
+
+<img src="docs/images/book.png" alt="Audiobook Studio: choose chapters, a narrator and hear a sample before you convert" width="860">
+
+</div>
+
+---
+
+## Why you'll like it
+
+|  |  |
+|---|---|
+| 🔒 **Private by design** | Narration runs on your Mac's GPU with open AI voice models. After the one-time model download it works offline. Nothing is uploaded, ever. |
+| 🎧 **A real audiobook, not a long MP3** | One `.m4b` with chapter markers, cover art, title and author, normalised loudness and the audiobook tag, checked with ffprobe after every conversion, so audiobook players can show chapters and your cover. |
+| 🗣️ **Voices you can actually pick** | Four engines, English and French, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
+| ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
+| ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
+| 🌙 **A proper Mac app** | Native SwiftUI, Liquid Glass design, light and dark mode. Conversions run in the background: close the window, quit the app, come back later. |
+
+<div align="center">
+<img src="docs/images/converting-dark.png" alt="Live progress with a time-left estimate" width="430">
+<img src="docs/images/done.png" alt="Finished audiobook with chapters, size and speed" width="430">
+</div>
+
+## How it works
+
+1. **Drop in a book.** An EPUB or a PDF with selectable text. Chapters are found from the table of contents; copyright pages, licences and indexes are left out for you, with the reason shown.
+2. **Pick a narrator.** Browse voices, listen to a preview of *your* book's first paragraph, clone a voice if you like.
+3. **Make a sample.** Hear two minutes and see the real time the full book will take.
+4. **Press Convert.** Close the window if you want. You'll get a notification when the `.m4b` is ready.
+
+<div align="center">
+<img src="docs/images/voices.png" alt="Voice browser: engines, voices, preview and compare" width="860">
+</div>
+
+## How fast is it?
+
+Measured on an Apple M4 Pro (48 GB), not quoted from a vendor. "×" means times faster than listening.
+
+| Engine | Best for | Speed | Licence |
+|---|---|---|---|
+| **Kokoro 82M** | Fast drafts, English | ≈ 14–18× — a 6½-hour French novel in 32 minutes | Apache-2.0 |
+| **Qwen3-TTS 1.7B** *(default)* | Best open quality, English, French by cloning | ≈ 3–5× with preset voices, ≈ 2.4× when cloning, speech check included | Apache-2.0 |
+| **Voxtral 4B** | Native French presets | ≈ 1.7–1.9× | CC BY-NC 4.0 (personal use) |
+| **Fish S2 Pro** | Highest-fidelity cloning | ≈ 0.56× — slower than real time | Non-commercial |
+
+Your Mac measures itself, so the app's estimates are for *your* machine.
+
+## Install
+
+**1. Download** the latest `AudiobookStudio-x.y.z.dmg` from the [Releases page](https://github.com/antoine-debroye/audiobook-converter/releases/latest), open it and drag **Audiobook Studio** to Applications. The app is signed with a Developer ID and notarized by Apple.
+
+**2. Install the narration engine** (once). The app drives a local Python engine and the AI voice models, which are too large to ship inside the app. Open Terminal and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/antoine-debroye/audiobook-converter/main/scripts/install-engine.sh | bash
+```
+
+It installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, sets up the engine under `~/Library/Application Support/AudiobookStudio`, and downloads the default models and four reference voices (about **12 GB**, one time). You need an Apple Silicon Mac, macOS 26 or later, and [Homebrew](https://brew.sh). Read the script first if you like: it is [short](scripts/install-engine.sh).
+
+**3. Open Audiobook Studio** and drop a book on the window.
+
+<details>
+<summary><b>Build from source instead</b></summary>
+
+Requirements: Apple Silicon Mac, macOS 26 or later, Xcode 26 command-line tools, Homebrew and about 12 GB free.
+
+```bash
+git clone https://github.com/antoine-debroye/audiobook-converter.git
+cd audiobook-converter
+make setup        # installs tools, the engine, models and voices, and builds app/build/AudiobookStudio.app
+make models-all   # optional: the non-commercial engines (Voxtral, Fish S2 Pro)
+```
+
+</details>
+
+## Under the hood
 
 ```
 AudiobookStudio.app (SwiftUI)  ──runs──▶  audiobook-engine (Python CLI, JSON lines on stdout)
@@ -15,30 +93,7 @@ AudiobookStudio.app (SwiftUI)  ──runs──▶  audiobook-engine (Python CLI
                                           └─ ffmpeg: loudness (−20 LUFS), AAC, chapters, cover → .m4b
 ```
 
-The engine works on its own from the terminal; the app is a thin front end over it.
-
-## Install
-
-Requirements: Apple Silicon Mac, macOS 26 or later (the app uses the Liquid Glass design), Xcode 26 command-line tools, Homebrew, and about **12 GB free**
-for the default models (more for the optional ones).
-
-```bash
-make setup
-```
-
-This installs `uv`, `ffmpeg` and `espeak-ng` if missing, creates the Python environment, downloads Kokoro,
-Qwen3-TTS and Whisper, installs four reference voices, and builds `app/build/AudiobookStudio.app`.
-`make models-all` adds the optional non-commercial engines (Voxtral, Fish S2 Pro).
-
-## Use the app
-
-Open `app/build/AudiobookStudio.app`, drop an EPUB or PDF on the window, check the chapters (front and back matter
-are unticked for you, with the reason), pick a narrator (preview it on your own book, or compare two voices), make a
-short sample to hear it and see how long the whole book will take on your Mac, then press Convert. Conversions run in
-the background: you can close the window or quit the app, and the progress screen picks them up again.
-
-`make app-check BOOK=path/to/book.epub` runs a self-test of the real app and engine together: it opens the book,
-makes a sample, converts the first chapter and saves screenshots of every screen to `app/build/check/`.
+The engine also works on its own from the terminal; the app is a thin front end over it.
 
 ## Use it from the terminal
 
@@ -109,6 +164,11 @@ Remove a model with `audiobook-engine models remove <engine>`.
 - English and French only. Other languages are detected and reported as unsupported.
 - No speaker casting (one narrator per book) in this version.
 - Kokoro's single French voice is draft quality; prefer Qwen3 with a French reference voice.
+
+## Releasing (maintainers)
+
+`scripts/release.sh` builds the app with hardened runtime, signs it with your **Developer ID Application** certificate, packs the DMG, submits it to Apple for notarization, staples the ticket and verifies it with Gatekeeper. One-time setup: a Developer ID Application certificate in the login keychain, and notarization credentials stored with
+`xcrun notarytool store-credentials AC_NOTARY --apple-id <id> --team-id <TEAMID> --password <app-specific password>` (or an App Store Connect API key with `--key/--key-id/--issuer`).
 
 ## Licences
 
