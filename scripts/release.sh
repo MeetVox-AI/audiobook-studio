@@ -25,6 +25,17 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -dv --verbose=4 "$APP" 2>&1 | grep -E "flags|Authority|Timestamp|TeamIdentifier"
 
 rm -rf "$OUT"; mkdir -p "$OUT/stage"
+
+# Notarize and staple the app itself first, so it carries its own ticket and passes Gatekeeper offline
+# after it is dragged out of the DMG (the DMG's ticket alone is not enough on a Mac without internet).
+if [[ "${NOTARIZE:-1}" == "1" ]]; then
+  ditto -c -k --keepParent "$APP" "$OUT/app.zip"
+  echo "Submitting the app to Apple for notarization..."
+  xcrun notarytool submit "$OUT/app.zip" --keychain-profile "$PROFILE" --wait
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  rm -f "$OUT/app.zip"
+fi
 cp -R "$APP" "$OUT/stage/"
 create-dmg --volname "Audiobook Studio" --window-size 560 360 --icon-size 100 \
   --icon "AudiobookStudio.app" 150 170 --app-drop-link 410 170 --hide-extension "AudiobookStudio.app" \
@@ -38,6 +49,10 @@ if [[ "${NOTARIZE:-1}" == "1" ]]; then
   xcrun stapler staple "$DMG"
   xcrun stapler validate "$DMG"
   spctl --assess --type open --context context:primary-signature -v "$DMG"
+  # The app inside the DMG must carry its own stapled ticket.
+  MNT="$(mktemp -d)"; hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null
+  xcrun stapler validate "$MNT/AudiobookStudio.app"; spctl --assess --type execute -v "$MNT/AudiobookStudio.app"
+  hdiutil detach "$MNT" >/dev/null; rmdir "$MNT"
   echo "Notarized and stapled: $DMG"
 else
   echo "Built (signed, NOT notarized): $DMG"
