@@ -85,7 +85,9 @@ ScrollView {
   Convert button (glass prominent).
 - **Voices**: narrator summary card at the top; engine cards as tiles with an icon, licence chip, speed stat
   and install state; filter bar as a glass bar; voice rows with an avatar circle (initials, tinted by
-  language), chips, actions on the right.
+  language), chips, actions on the right (a star toggle first: amber when a favourite, grey outline otherwise;
+  favourites sort first in each group). The filter bar has a "Favourites (n)" toggle button; favourites are
+  stored in `AppSettings.favoriteVoices` by voice-option id.
 - **Job progress**: large progress ring with percent, current chapter, ETA range as the main number, stat
   tiles (elapsed, speed, × real time, chapters), the rate chart with a gradient area fill, quality and
   machine status as small cards, Cancel as a glass button.

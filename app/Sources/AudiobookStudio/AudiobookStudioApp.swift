@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     let model = AppModel(settings: SnapshotTour.directory == nil
         ? AppSettings()
-        : AppSettings(defaults: UserDefaults(suiteName: "local.audiobookstudio.snapshot") ?? .standard))
+        : AppSettings(defaults: UserDefaults(suiteName: SnapshotTour.defaultsSuite) ?? .standard))
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // `swift run` starts a bare executable: make it a regular app with a Dock icon and a menu bar.

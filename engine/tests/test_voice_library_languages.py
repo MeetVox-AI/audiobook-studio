@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import io
 import re
+import subprocess
 import tarfile
 
 import numpy as np
@@ -91,6 +92,18 @@ def test_new_entries_carry_a_transcript_a_checksum_and_a_usable_length():
         assert e["sample_rate"] >= 16000, e["id"]
 
 
+def test_partial_downloads_are_well_formed():
+    for e in voices.library():
+        if "source_bytes" not in e:
+            continue
+        assert "archive_member" not in e and e["audio_url"].endswith(".mp3"), e["id"]
+        assert isinstance(e["source_bytes"], int) and 0 < e["source_bytes"] <= voices.MAX_DOWNLOAD_BYTES, e["id"]
+        assert re.fullmatch(r"[0-9a-f]{64}", e["source_sha256"]), f"{e['id']}: the checksum covers the fetched bytes"
+        assert 0 <= e["start_s"] < e["end_s"], e["id"]
+        # at 64 kbit/s one second is 8,000 bytes: the fetched part must reach the end of the window
+        assert e["source_bytes"] >= e["end_s"] * 4000, e["id"]
+
+
 def test_windows_and_archive_members_are_well_formed():
     for e in voices.library():
         if "start_s" in e or "end_s" in e:
@@ -162,12 +175,65 @@ def test_a_segment_of_a_long_recording_is_cut_by_its_time_window(monkeypatch):
     assert iv.transcript_source == "published"
 
 
+def test_a_window_keeps_the_pauses_between_phrases_and_stops_at_its_end(monkeypatch):
+    # speech 3 s, pause 1.5 s, speech 3 s, then more speech that is NOT part of the stretch
+    audio = np.concatenate([tone(3, 300), tone(1.5, 300, amp=0.0), tone(3, 300), tone(6, 1500)])
+    use_library(monkeypatch, entry(start_s=0.0, end_s=7.5, duration_s=7.5))
+    serve(monkeypatch, wav_bytes(audio))
+    a, sr = sf.read(str(voices.download("xx_test_clip_female").path))
+    assert abs(a.size / sr - 7.5) < 0.3  # the pause stays; nothing is read past the end
+    assert abs(dominant_hz(a) - 300) < 20
+
+
 def test_the_window_never_exceeds_the_clip_limit(monkeypatch):
     use_library(monkeypatch, entry(start_s=2.0, end_s=40.0, duration_s=18.0))
     serve(monkeypatch, wav_bytes(tone(45, 440)))
     iv = voices.download("xx_test_clip_female")
     audio, sr = sf.read(str(iv.path))
     assert audio.size / sr <= voices.MAX_CLIP_S + 0.1
+
+
+def test_only_the_leading_bytes_of_a_long_recording_are_fetched(monkeypatch):
+    long = wav_bytes(np.concatenate([tone(10, 300), tone(10, 900)]))
+    head = long[:SR * 2 * 12]  # 44-byte header + the first ~12 s of 16-bit samples
+    seen = {}
+
+    def urlopen(req, timeout=None):
+        seen["range"] = req.get_header("Range")
+        return io.BytesIO(long)  # a server that ignores Range sends everything
+
+    use_library(monkeypatch, entry(start_s=1.0, end_s=9.0, duration_s=8.0, source_bytes=len(head),
+                                   source_sha256=hashlib.sha256(head).hexdigest()))
+    monkeypatch.setattr(voices.urllib.request, "urlopen", urlopen)
+    iv = voices.download("xx_test_clip_female")
+    assert seen["range"] == f"bytes=0-{len(head) - 1}"
+    assert iv.meta["sha256"] == hashlib.sha256(head).hexdigest()
+    audio, sr = sf.read(str(iv.path))
+    assert abs(dominant_hz(audio) - 300) < 20
+
+
+def test_a_window_is_cut_in_the_right_place_from_a_partly_fetched_mp3(monkeypatch, tmp_path):
+    # A real VBR MP3 (its header holds a seek table for the WHOLE file), cut short like a Range fetch.
+    long = np.concatenate([tone(10, 300), tone(10, 900), tone(10, 1500)])
+    wav = tmp_path / "long.wav"
+    sf.write(str(wav), long, SR)
+    mp3 = tmp_path / "long.mp3"
+    subprocess.run([voices.FFMPEG, "-y", "-loglevel", "error", "-i", str(wav), "-q:a", "4", str(mp3)], check=True)
+    head = mp3.read_bytes()[: int(mp3.stat().st_size * 0.75)]  # about the first 22 s
+    use_library(monkeypatch, entry(audio_url="https://example.org/a.mp3", start_s=10.5, end_s=14.0, duration_s=3.5,
+                                   source_bytes=len(head), source_sha256=hashlib.sha256(head).hexdigest()))
+    serve(monkeypatch, mp3.read_bytes())
+    audio, sr = sf.read(str(voices.download("xx_test_clip_female").path))
+    assert abs(audio.size / sr - 3.5) < 0.5
+    assert abs(dominant_hz(audio) - 900) < 20
+
+
+def test_an_invalid_download_size_is_refused(monkeypatch):
+    use_library(monkeypatch, entry(source_bytes=0))
+    serve(monkeypatch, wav_bytes(tone(8.0, 300)))
+    with pytest.raises(ValueError, match="invalid download size"):
+        voices.download("xx_test_clip_female")
+    assert list(voices.voices_dir().iterdir()) == []
 
 
 def test_a_file_that_is_not_the_checked_one_is_refused_and_leaves_nothing(monkeypatch):

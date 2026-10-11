@@ -63,6 +63,14 @@ final class AppSettings {
     /// Non-commercial engines whose licence the user acknowledged (licence sheet shown once per engine).
     var acknowledgedLicenses: Set<String> { didSet { saveCodable(acknowledgedLicenses, Key.licenses) } }
 
+    /// Voices the user starred, as `VoiceOption.id` strings. That id is stable across engines on purpose:
+    /// "ref:<voice id>" for reference voices (library and the user's own clips), which every cloning engine
+    /// lists under the same row, so one star covers the voice whichever engine narrates it; and
+    /// "preset:<engine>:<voice>" for engine presets, because the same preset id can exist in two engines
+    /// (and means a different voice there). Engine-specific selections (`VoiceSelection`) are not used as keys:
+    /// they change with the engine.
+    var favoriteVoices: Set<String> { didSet { saveCodable(favoriteVoices, Key.favoriteVoices) } }
+
     /// The engine executable path in use. Setting it to empty or to the default clears the override.
     var enginePath: String {
         get { enginePathOverride ?? EngineClient.defaultPath }
@@ -91,6 +99,7 @@ final class AppSettings {
         static let licenses = "AudiobookStudio.acknowledgedLicenses"
         static let terms = "AudiobookStudio.acceptedTermsVersion"
         static let setup = "AudiobookStudio.setupState"
+        static let favoriteVoices = "AudiobookStudio.favoriteVoices"
     }
 
     /// `defaults` is injectable for tests (`UserDefaults(suiteName:)`).
@@ -106,8 +115,15 @@ final class AppSettings {
         pacing = AppSettings.loadCodable(Pacing.self, Key.pacing, defaults) ?? Pacing()
         acknowledgedLicenses = AppSettings.loadCodable(Set<String>.self, Key.licenses, defaults) ?? []
         acceptedTermsVersion = defaults.integer(forKey: Key.terms)
+        favoriteVoices = AppSettings.loadCodable(Set<String>.self, Key.favoriteVoices, defaults) ?? []
         setupState = defaults.string(forKey: Key.setup).flatMap(SetupState.init(rawValue:)) ?? .notStarted
     }
+
+    func isFavoriteVoice(_ id: String) -> Bool { favoriteVoices.contains(id) }
+    func setFavoriteVoice(_ id: String, _ isFavorite: Bool) {
+        if isFavorite { favoriteVoices.insert(id) } else { favoriteVoices.remove(id) }
+    }
+    func toggleFavoriteVoice(_ id: String) { setFavoriteVoice(id, !favoriteVoices.contains(id)) }
 
     func resetEnginePath() { enginePathOverride = nil }
 
