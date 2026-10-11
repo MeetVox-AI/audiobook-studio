@@ -486,7 +486,7 @@ final class AppModel {
     // MARK: - Conversion jobs
 
     /// Starts converting the current draft in the background (`convert ... --detach`), registers a live
-    /// JobMonitor, adds the job to `jobs` and selects its screen. Uses `voice` or `voiceSelection` and the
+    /// JobMonitor, adds the job to `jobs`, selects its screen and clears the draft. Uses `voice` or `voiceSelection` and the
     /// output folder, bitrate and keep-work settings. Throws EngineError (e.g. "Not enough disk space ...":
     /// check `isDiskSpace` to show it prominently).
     @discardableResult
@@ -500,7 +500,10 @@ final class AppModel {
         let placeholder = JobStatus(jobId: "", book: draft.url.path, title: draft.title, author: draft.author,
                                     lang: draft.language, engine: voice.engineId, voice: voice.voiceId,
                                     speed: voice.speed, state: JobState.queued.engineValue, jobDir: "")
-        return try await launchDetached(request.arguments, placeholder: placeholder)
+        let monitor = try await launchDetached(request.arguments, placeholder: placeholder)
+        // The book is now a job: "New audiobook" starts empty instead of reopening this book.
+        closeBook()
+        return monitor
     }
 
     /// Runs a stopped job again with its recorded arguments (same options → same job: finished chunks and
