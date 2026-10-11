@@ -2,7 +2,7 @@
 
 Almost nothing is language specific on disk. The voice models are shared (Qwen3-TTS speaks ten languages with
 the same 6 GB, Voxtral nine, Kokoro six), so turning a language on downloads only its small reference voices
-(a few MB) from the voice library. If none of the engines installed on this Mac can speak the language, the
+(about 10-17 MB for the languages with the most narrators, a few MB for the rest) from the voice library. If none of the engines installed on this Mac can speak the language, the
 result says which engine is needed and how large it is; this module never downloads a model by itself.
 Turning a language off deletes the library voices it downloaded (never the user's own clips); the shared
 models stay, because other languages use them.

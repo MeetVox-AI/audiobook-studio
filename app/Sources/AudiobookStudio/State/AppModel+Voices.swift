@@ -106,7 +106,11 @@ enum VoiceCatalog {
     /// Browser sections: the user's clips, the reference library, then one group per engine's presets.
     /// With `accentLanguage` (the language being browsed), presets of another language that speak it with an
     /// accent follow the native groups in groups of their own ("<Engine> · speaks Spanish with an accent").
-    static func groups(_ options: [VoiceOption], engines: [EngineInfo], accentLanguage: String? = nil) -> [VoiceOptionGroup] {
+    /// Starred voices (`favorites`, as `VoiceOption.id`) come first inside each group, keeping the catalogue order otherwise.
+    static func groups(_ options: [VoiceOption], engines: [EngineInfo], accentLanguage: String? = nil,
+                       favorites: Set<String> = []) -> [VoiceOptionGroup] {
+        let options = favorites.isEmpty ? options
+            : options.filter { favorites.contains($0.id) } + options.filter { !favorites.contains($0.id) }
         let isAccented: (VoiceOption) -> Bool = { o in accentLanguage.map(o.speaksWithAccent) ?? false }
         var groups: [VoiceOptionGroup] = []
         let clips = options.filter { $0.kind == .userClip }
@@ -199,6 +203,8 @@ struct VoiceFilter: Hashable, Sendable {
     var engineId: String?
     var license: VoiceLicenseFilter = .any
     var search = ""
+    /// Only the voices the user starred (`AppSettings.favoriteVoices`).
+    var favoritesOnly = false
 
     static let genders = ["female", "male"]
 
@@ -214,7 +220,8 @@ struct VoiceFilter: Hashable, Sendable {
     /// True when something other than the default (book language) narrows the list.
     var isNarrowed: Bool { self != VoiceFilter() }
 
-    func matches(_ option: VoiceOption, engines: [EngineInfo], bookLanguage: String?) -> Bool {
+    func matches(_ option: VoiceOption, engines: [EngineInfo], bookLanguage: String?, favorites: Set<String> = []) -> Bool {
+        if favoritesOnly, !favorites.contains(option.id) { return false }
         if let code = languageCode(bookLanguage: bookLanguage), option.language != code, !option.speaksWithAccent(code) { return false }
         if let gender, option.gender?.lowercased() != gender { return false }
         if let engineId, !option.engineIds.contains(engineId) { return false }
@@ -575,7 +582,16 @@ extension AppModel {
     var filteredVoiceOptions: [VoiceOption] {
         let filter = voiceLab.filter
         let language = draft?.language
-        return voiceOptions.filter { filter.matches($0, engines: engines, bookLanguage: language) && isVoiceLanguageShown($0) }
+        let favorites = settings.favoriteVoices
+        return voiceOptions.filter {
+            filter.matches($0, engines: engines, bookLanguage: language, favorites: favorites) && isVoiceLanguageShown($0)
+        }
+    }
+
+    /// How many of the voices the browser can list (language switches ignored) are starred.
+    var favoriteVoiceCount: Int {
+        let favorites = settings.favoriteVoices
+        return voiceOptions.filter { favorites.contains($0.id) && isVoiceLanguageShown($0) }.count
     }
 
     /// Languages offered by the language filter: the enabled ones (registry order) plus the open book's own.

@@ -12,6 +12,12 @@ enum SnapshotTour {
         return URL(fileURLWithPath: p, isDirectory: true)
     }
 
+    /// Defaults domain of the tour; AUDIOBOOK_STUDIO_SNAPSHOT_SUITE gives one run its own (never the user's domain).
+    static var defaultsSuite: String {
+        ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_SUITE"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? "local.audiobookstudio.snapshot"
+    }
+
     /// AUDIOBOOK_STUDIO_SNAPSHOT_TERMS=1: the tour shows the first-launch terms sheet, captures it, then accepts.
     static var showTerms: Bool { ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_TERMS"] == "1" }
 
@@ -105,6 +111,14 @@ enum SnapshotTour {
         if let search = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_VOICE_SEARCH"], !search.isEmpty {
             model.voiceLab.filter = VoiceFilter(language: .all)
             model.voiceLab.filter.search = search
+        }
+        // AUDIOBOOK_STUDIO_SNAPSHOT_FAVORITES="ref:a,preset:kokoro:b" stars those voices (AppSettings.favoriteVoices);
+        // AUDIOBOOK_STUDIO_SNAPSHOT_FAVORITES_ONLY=1 turns the browser's Favourites filter on.
+        if let ids = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_FAVORITES"], !ids.isEmpty {
+            model.settings.favoriteVoices = Set(ids.split(separator: ",").map(String.init))
+            model.voiceLab.filter = VoiceFilter(language: .all)
+            model.voiceLab.filter.favoritesOnly = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_FAVORITES_ONLY"] == "1"
+            model.voiceLab.filter.search = ProcessInfo.processInfo.environment["AUDIOBOOK_STUDIO_SNAPSHOT_VOICE_SEARCH"] ?? ""
         }
         var stops: [(String, SidebarItem)] = [
             ("book", .newBook), ("voices", .voices), ("models", .models), ("benchmark", .benchmark), ("jobs", .jobs),

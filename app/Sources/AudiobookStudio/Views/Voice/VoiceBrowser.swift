@@ -10,7 +10,8 @@ struct VoiceBrowser: View {
     var body: some View {
         let options = model.filteredVoiceOptions
         let groups = VoiceCatalog.groups(options, engines: model.engines,
-                                         accentLanguage: model.voiceLab.filter.languageCode(bookLanguage: model.draft?.language))
+                                         accentLanguage: model.voiceLab.filter.languageCode(bookLanguage: model.draft?.language),
+                                         favorites: model.settings.favoriteVoices)
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             SectionHeader("Voices", subtitle: subtitle) {
                 Button(action: addVoice) {
@@ -37,9 +38,13 @@ struct VoiceBrowser: View {
                 .contentTransition(.numericText())
 
             if options.isEmpty {
-                EmptyStateView(systemImage: "line.3.horizontal.decrease.circle", title: "No voices match",
-                               message: "Change the filters to see more voices.") {
-                    Button("Show All Voices") { model.voiceLab.filter = VoiceFilter(language: .all) }
+                EmptyStateView(systemImage: noFavourites ? "star" : "line.3.horizontal.decrease.circle",
+                               title: noFavourites ? "No favourites yet" : "No voices match",
+                               message: noFavourites ? "No favourites yet — star a voice to find it here."
+                                                     : "Change the filters to see more voices.") {
+                    Button("Show All Voices") {
+                        model.voiceLab.filter = VoiceFilter(language: .all)
+                    }
                         .voiceCapsuleButton()
                         .accessibilityLabel("Clear the filters and show all voices")
                 }
@@ -71,6 +76,9 @@ struct VoiceBrowser: View {
         guard !cloners.isEmpty else { return "Preset voices are built into an engine." }
         return "Preset voices are built into an engine. Reference voices are short recordings that \(VoiceText.list(cloners)) imitate."
     }
+
+    /// The favourites filter is on and the user has not starred any voice (otherwise other filters hide them).
+    private var noFavourites: Bool { model.voiceLab.filter.favoritesOnly && model.favoriteVoiceCount == 0 }
 
     private func countText(_ n: Int) -> String { n == 1 ? "1 voice" : "\(Formatters.count(n)) voices" }
 }
@@ -140,6 +148,16 @@ private struct VoiceFilterBar: View {
                 .pickerStyle(.menu)
                 .fixedSize()
                 .accessibilityLabel("Filter by licence")
+
+                Toggle(isOn: $lab.filter.favoritesOnly.animation(.smooth)) {
+                    Label(model.favoriteVoiceCount > 0 ? "Favourites (\(model.favoriteVoiceCount))" : "Favourites",
+                          systemImage: lab.filter.favoritesOnly ? "star.fill" : "star")
+                }
+                .toggleStyle(.button)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+                .accessibilityLabel("Show favourite voices only")
+                .help("Only the voices you starred")
 
                 if lab.filter.isNarrowed {
                     Button("Reset Filters") { lab.filter = VoiceFilter() }
@@ -315,6 +333,7 @@ private struct VoiceOptionRow: View {
     @ViewBuilder
     private func actions(target: VoiceSelection?, chosen: Bool, preview: SampleRun?) -> some View {
         HStack(spacing: Theme.Space.s) {
+            favoriteButton
             if option.isReference && !option.installed {
                 if model.busyVoiceIds.contains(option.voiceId) {
                     ProgressView()
@@ -385,6 +404,23 @@ private struct VoiceOptionRow: View {
                 }
             }
         }
+    }
+
+    /// Star toggle: filled amber when starred. Amber is a readable colour in both appearances (never the accent).
+    private var favoriteButton: some View {
+        let starred = model.settings.isFavoriteVoice(option.id)
+        return Button {
+            withAnimation(.smooth) { model.settings.toggleFavoriteVoice(option.id) }
+        } label: {
+            Image(systemName: starred ? "star.fill" : "star")
+                .foregroundStyle(starred ? Theme.highlight : Color.secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.borderless)
+        .help(starred ? "Remove \(option.name) from your favourites" : "Add \(option.name) to your favourites")
+        .accessibilityLabel(starred ? "Remove \(option.name) from favourites" : "Add \(option.name) to favourites")
+        .accessibilityAddTraits(starred ? .isSelected : [])
     }
 
     private func useHelp(_ target: VoiceSelection?) -> String {

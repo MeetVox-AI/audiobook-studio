@@ -887,6 +887,8 @@ final class AppModel {
     /// and the narrator (which falls back to the default voice for the book's language).
     func forgetVoice(_ id: String, file: URL?) {
         if let file, player.isPlaying(file) { player.stop() }
+        // Only a deleted clip loses its star; an uninstalled library voice stays listed (and starred).
+        if id.hasPrefix("user-") { settings.setFavoriteVoice("ref:\(id)", false) }
         for (language, saved) in settings.defaultVoices where saved.refVoiceId == id {
             settings.defaultVoices[language] = nil
         }

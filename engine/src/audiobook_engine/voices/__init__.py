@@ -14,6 +14,8 @@ import re
 import shutil
 import subprocess
 import tarfile
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from importlib import resources
@@ -108,6 +110,9 @@ def get(voice_id: str) -> InstalledVoice | None:
 
 
 _SILENCE = "silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=-1:stop_threshold=-45dB:stop_duration=0.6"
+# Trim silence at the two ends only (the second pair works on the reversed audio), keeping the pauses between phrases.
+_EDGES = ("silenceremove=start_periods=1:start_threshold=-45dB,areverse,"
+          "silenceremove=start_periods=1:start_threshold=-45dB,areverse")
 SOURCE_S = 60.0  # how much of the user's recording is kept (and read) for clean-up and later reprocessing
 
 
@@ -142,10 +147,17 @@ def _prepare_clip(src: Path, dst: Path, start_s: float | None = None, end_s: flo
     if isolate or enhance:
         return _prepare_cleaned(src, dst, isolate, enhance)
     tmp = dst.with_suffix(".tmp.wav")
-    window = min(MAX_CLIP_S, end_s - start_s) if start_s is not None and end_s is not None else MAX_CLIP_S
-    seek = ["-ss", f"{start_s:.3f}"] if start_s else []
     try:
-        _ffmpeg([*seek, "-i", str(src), "-ac", "1", "-ar", str(CLIP_SR), "-af", _SILENCE, "-t", f"{window:.3f}", str(tmp)])
+        if start_s is not None and end_s is not None:
+            # A stretch of a longer recording, cut by time inside the filter graph: exactly [start_s, end_s) is read
+            # (no `-ss`, which is unreliable on a partly fetched MP3, and no `-t` after a silence filter, which
+            # would count the output and so read past the end of the stretch). Interior pauses are kept, so the
+            # clip holds the same words as the library's transcript.
+            stop = min(end_s, start_s + MAX_CLIP_S)
+            cut = f"atrim=start={start_s:.3f}:end={stop:.3f},asetpts=PTS-STARTPTS,{_EDGES}"
+            _ffmpeg(["-i", str(src), "-ac", "1", "-ar", str(CLIP_SR), "-af", cut, str(tmp)])
+        else:
+            _ffmpeg(["-i", str(src), "-ac", "1", "-ar", str(CLIP_SR), "-af", _SILENCE, "-t", f"{MAX_CLIP_S:.3f}", str(tmp)])
         audio, sr = sf.read(str(tmp), dtype="float32")
     finally:
         tmp.unlink(missing_ok=True)
@@ -209,19 +221,31 @@ def _fetch(entry: dict, raw: Path) -> None:
 
     An entry with `archive_member` names a file inside a (possibly multi-GB) .tar/.tar.gz corpus archive. The
     archive is streamed, never stored, and reading stops at that member, so the member must sit near its start.
+
+    An entry with `source_bytes` is a stretch near the start of a long recording (an audiobook chapter): only
+    that many leading bytes are fetched and the checksum covers just those, so a 10-second reference voice costs
+    about a megabyte, not the whole 10-20 MB chapter.
     """
-    req = urllib.request.Request(entry["audio_url"], headers={"User-Agent": "AudiobookStudio/0.1"})
+    headers = {"User-Agent": "AudiobookStudio/0.1"}
+    prefix = entry.get("source_bytes")
+    if prefix is not None:
+        if not isinstance(prefix, int) or not 0 < prefix <= MAX_DOWNLOAD_BYTES:
+            raise VoiceProblem("This library entry has an invalid download size.")
+        headers["Range"] = f"bytes=0-{prefix - 1}"
+    req = urllib.request.Request(entry["audio_url"], headers=headers)
     member = entry.get("archive_member")
     limit = MAX_ARCHIVE_STREAM_BYTES if member else MAX_DOWNLOAD_BYTES
     with urllib.request.urlopen(req, timeout=60) as r:
         if not member:
             with open(raw, "wb") as f:
                 size = 0
-                while chunk := r.read(1 << 16):
+                while chunk := r.read(min(1 << 16, prefix - size) if prefix else 1 << 16):
                     size += len(chunk)
                     if size > MAX_DOWNLOAD_BYTES:
                         raise VoiceProblem("Download larger than 20 MB; refusing.")
                     f.write(chunk)
+                    if prefix and size >= prefix:  # a server that ignores Range sends the whole file: stop here
+                        break
             return
 
         class Capped:  # counts what the archive reader pulls from the network
@@ -255,14 +279,21 @@ def download(voice_id: str, transcribe: bool = True) -> InstalledVoice:
     work.mkdir(exist_ok=True)
     try:
         raw = work / "source"
-        _fetch(entry, raw)
+        for attempt in range(3):
+            try:
+                _fetch(entry, raw)
+                break
+            except urllib.error.HTTPError as e:  # archive.org answers 500/503 now and then
+                if e.code < 500 or attempt == 2:
+                    raise
+                time.sleep(2 * (attempt + 1))
         digest = hashlib.sha256(raw.read_bytes()).hexdigest()
         if entry.get("source_sha256") and digest != entry["source_sha256"]:
             raise VoiceProblem("The downloaded audio is not the file this library entry was checked against "
                              "(its checksum differs); refusing to install it.")
         staged = work / "clip.wav"
         dur = _prepare_clip(raw, staged, entry.get("start_s"), entry.get("end_s"))
-        transcript, source = entry.get("transcript", ""), "published"
+        transcript, source = entry.get("transcript", ""), entry.get("transcript_source", "published")
         if dur < (entry.get("duration_s") or 0) - 0.5:
             # we trimmed the clip, so the published transcript may no longer match
             transcript, source = "", ""

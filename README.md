@@ -44,7 +44,7 @@
 
 ## Languages
 
-English is on by default. **Add French and the other languages in Settings → Languages, only when you need them**: a language costs just its small reference voices (about 1–2 MB), because the voice models are shared by all languages and are installed once. The app tells you if a language needs an engine you have not installed (and its size) and never downloads a model without your say-so. Removing a language deletes its voices.
+English is on by default. **Add French and the other languages in Settings → Languages, only when you need them**: a language costs just its small reference voices (about 10–17 MB for the languages with the most narrators, a few MB for the others: French has 36 narrators to choose from, Spanish 31), because the voice models are shared by all languages and are installed once. The app tells you if a language needs an engine you have not installed (and its size) and never downloads a model without your say-so. Removing a language deletes its voices.
 
 | | Languages |
 |---|---|
