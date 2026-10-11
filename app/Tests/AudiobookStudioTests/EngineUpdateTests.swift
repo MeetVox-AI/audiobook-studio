@@ -24,7 +24,7 @@ private func stubEngine(in folder: URL) throws -> (path: String, updatedFlag: UR
     let engine = folder.appendingPathComponent("audiobook-engine")
     try executable(engine, """
     case "$1 $2" in
-      engines*) if [ -f '\(flag.path)' ]; then echo '{"engines": [], "measured": {}, "api": 2}'; else echo '{"engines": [], "measured": {}}'; fi ;;
+      engines*) if [ -f '\(flag.path)' ]; then echo '{"engines": [], "measured": {}, "api": 3}'; else echo '{"engines": [], "measured": {}}'; fi ;;
       "models list") echo '{"models": []}' ;;
       "voices list") echo '{"voices": []}' ;;
       "jobs list") echo '{"jobs": []}' ;;
@@ -180,7 +180,7 @@ private func engineList(api: Int?) -> EngineList { EngineList(engines: [], measu
     await model.updateEngine(script: script)
 
     #expect(model.engineUpdateError == nil)
-    #expect(!model.engineNeedsUpdate && model.engineAPI == 2)
+    #expect(!model.engineNeedsUpdate && model.engineAPI == AppModel.requiredEngineAPI)
     #expect(!model.isUpdatingEngine)
     #expect(try String(contentsOf: env, encoding: .utf8).contains("NO_MODELS=1"))   // never re-downloads models
 }

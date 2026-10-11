@@ -10,7 +10,7 @@ import Foundation
 extension AppModel {
     /// The engine API level this app needs (`audiobook_engine.API_VERSION`). Raise it together with the engine's
     /// whenever the app starts using a new engine command or option.
-    static let requiredEngineAPI = 2
+    static let requiredEngineAPI = 3
 
     /// The running engine's API level; engines from before levels existed report none and count as 1.
     var engineAPI: Int { engineList?.api ?? 1 }
