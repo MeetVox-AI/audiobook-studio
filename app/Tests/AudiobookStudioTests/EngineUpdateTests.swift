@@ -24,7 +24,7 @@ private func stubEngine(in folder: URL) throws -> (path: String, updatedFlag: UR
     let engine = folder.appendingPathComponent("audiobook-engine")
     try executable(engine, """
     case "$1 $2" in
-      engines*) if [ -f '\(flag.path)' ]; then echo '{"engines": [], "measured": {}, "api": 3}'; else echo '{"engines": [], "measured": {}}'; fi ;;
+      engines*) if [ -f '\(flag.path)' ]; then echo '{"engines": [], "measured": {}, "api": 4}'; else echo '{"engines": [], "measured": {}}'; fi ;;
       "models list") echo '{"models": []}' ;;
       "voices list") echo '{"voices": []}' ;;
       "jobs list") echo '{"jobs": []}' ;;

@@ -18,6 +18,7 @@ to individual chunks through the alignment.
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from dataclasses import asdict, dataclass
@@ -27,9 +28,26 @@ import numpy as np
 from ..textproc.normalize import normalize_paragraph
 
 WHISPER = "mlx-community/whisper-large-v3-turbo-asr-fp16"
+QWEN3_ASR = "mlx-community/Qwen3-ASR-0.6B-8bit"
 WHISPER_SR = 16000  # mlx-audio's Whisper assumes 16 kHz arrays and does not resample
 WINDOW_S = 27.0     # pack chunks up to this much audio per Whisper call
 GAP_S = 0.6
+
+# Whisper is the stronger recogniser here for English and French, and the only one whose thresholds were
+# calibrated on real narration. Qwen3-ASR (30 languages) is markedly better on the others, so it takes them
+# when its model is installed. AUDIOBOOK_ASR=whisper|qwen3 forces one, for A/B and for rolling back.
+WHISPER_LANGS = frozenset({"en", "fr"})
+
+
+def _model_installed(repo: str) -> bool:
+    try:
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(repo, local_files_only=True)
+        return True
+    except Exception:
+        return False
+
 
 # Pass/fail thresholds (characters of the folded text).
 MAX_CER = 0.15
@@ -339,18 +357,31 @@ ZH_PROMPT = "以下是普通话的句子。"
 
 
 class Verifier:
-    def __init__(self, lang: str):
-        self.lang = _code(lang)  # Whisper takes the bare ISO code: "pt-BR" -> "pt"
+    def __init__(self, lang: str, backend: str | None = None):
+        self.lang = _code(lang)  # both recognisers take the bare ISO code: "pt-BR" -> "pt"
+        self.backend = backend or self._choose_backend()
         self.model = None
+
+    def _choose_backend(self) -> str:
+        forced = os.environ.get("AUDIOBOOK_ASR", "").strip().lower()
+        if forced in {"whisper", "qwen3"}:
+            return forced
+        if self.lang in WHISPER_LANGS:
+            return "whisper"
+        # Not installed (or no network to check): the calibrated default still works everywhere.
+        return "qwen3" if _model_installed(QWEN3_ASR) else "whisper"
 
     def load(self) -> None:
         if self.model is None:
             from mlx_audio.stt.utils import load
 
-            self.model = load(WHISPER)
+            self.model = load(QWEN3_ASR if self.backend == "qwen3" else WHISPER)
 
     def transcribe(self, audio16k: np.ndarray) -> str:
         self.load()
+        if self.backend == "qwen3":
+            out = self.model.generate(audio16k, language=self.lang)
+            return (getattr(out, "text", None) or "").strip()
         extra = {"initial_prompt": ZH_PROMPT} if self.lang == "zh" else {}
         out = self.model.generate(audio16k, language=self.lang, verbose=False,
                                   condition_on_previous_text=False, temperature=0.0, **extra)
@@ -363,6 +394,8 @@ class Verifier:
 
     def check_many(self, texts: list[str], audios: list[np.ndarray], sr: int) -> list[Score]:
         """Pack consecutive chunks into ~27 s windows, one Whisper call per window."""
+        if self.backend == "qwen3":
+            return self._check_many_qwen3(texts, audios, sr)
         results: list[Score | None] = [None] * len(texts)
         gap = np.zeros(int(GAP_S * WHISPER_SR), np.float32)
         i = 0
@@ -385,3 +418,18 @@ class Verifier:
             for (k, _), sc in zip(group, score_packed([texts[k] for k, _ in group], heard, self.lang)):
                 results[k] = sc
         return results  # type: ignore[return-value]
+
+    def _check_many_qwen3(self, texts: list[str], audios: list[np.ndarray], sr: int) -> list[Score]:
+        """Qwen3-ASR takes a list of clips and long audio, so no 27 s packing: one call for the batch."""
+        results = [score(t, "", self.lang) for t in texts]
+        clips = [to_16k(a, sr) for a in audios]
+        todo = [i for i, a in enumerate(clips) if a.size]
+        if not todo:
+            return results
+        self.load()
+        outs = self.model.generate([clips[i] for i in todo], language=self.lang)
+        if not isinstance(outs, list):
+            outs = [outs]
+        for i, out in zip(todo, outs):
+            results[i] = score(texts[i], (getattr(out, "text", None) or "").strip(), self.lang)
+        return results

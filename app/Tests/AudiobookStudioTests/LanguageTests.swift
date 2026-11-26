@@ -59,9 +59,9 @@ private func book(language code: String) throws -> BookDraft {
     #expect(all.map(\.code) == ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"])
     #expect(all.filter(\.enabled).map(\.code) == ["en", "fr"])
     let es = try #require(all.first { $0.code == "es" })
-    #expect(es.name == "Spanish" && es.native == "Español" && !es.rtl && es.ready && es.recommended == "qwen3")
-    #expect(es.engines.map(\.id) == ["qwen3", "kokoro", "voxtral"])
-    let voxtral = try #require(es.engines.last)
+    #expect(es.name == "Spanish" && es.native == "Español" && !es.rtl && es.ready && es.recommended == "zonos3")
+    #expect(es.engines.map(\.id) == ["zonos3", "kokoro", "qwen3", "voxtral", "voxcpm2"])
+    let voxtral = try #require(es.engines.first { $0.id == "voxtral" })
     #expect(voxtral.noncommercial == true && voxtral.downloadGb == 2.5 && voxtral.nativePresets == true && voxtral.cloning == false)
     #expect(all.first { $0.code == "en" }?.voices == LanguageVoices(available: 6, installed: 0, bytes: 0, downloadMb: 3.1))
     #expect(es.needText == nil)                                   // ready

@@ -17,6 +17,7 @@ from audiobook_engine.tts import (
     EngineError,
     VoiceChoice,
     check_preset,
+    default_preset,
     get_engine,
     specs,
 )
@@ -25,7 +26,8 @@ from audiobook_engine.tts import qwen3 as qwen3_mod
 from audiobook_engine.tts import voxtral as voxtral_mod
 from audiobook_engine.tts.voxtral import strip_decorative_quotes
 
-PRESET_ENGINES = ("kokoro", "qwen3", "voxtral")
+PRESET_ENGINES = ("kokoro", "qwen3", "voxtral", "zonos3")
+ALL_LANGS = {"en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"}
 # voices/*.safetensors of the cached mlx-community/Kokoro-82M-bf16 that are English but not listed
 KOKORO_EXTRA_EN = ("af_alloy", "af_aoede", "af_jessica", "af_kore", "af_river", "am_liam", "am_onyx", "am_santa")
 
@@ -114,6 +116,32 @@ class FakeKokoroModel:
         return pipeline
 
 
+class FakeZonos3Model:
+    """mlx-audio ZONOS3 Model: generate() yields the finished 44.1 kHz clip."""
+
+    sample_rate = 44100
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def generate(self, text, **kwargs):
+        self.calls.append({"text": text, **kwargs})
+        yield types.SimpleNamespace(audio=np.ones(441, np.float32), sample_rate=self.sample_rate)
+
+
+class FakeVoxCPM2Model:
+    """mlx-audio VoxCPM2 Model: generate() yields the finished 48 kHz clip."""
+
+    sample_rate = 48000
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def generate(self, text, **kwargs):
+        self.calls.append({"text": text, **kwargs})
+        yield types.SimpleNamespace(audio=np.ones(480, np.float32), sample_rate=self.sample_rate)
+
+
 @pytest.mark.parametrize("src, want", [
     ("« Où allez-vous ? » dit-il.", "Où allez-vous ? dit-il."),
     ("L'autre qu'il aimait.", "L'autre qu'il aimait."),
@@ -135,12 +163,22 @@ def test_voxtral_quote_stripping_keeps_elisions(src, want):
 
 def test_registry_lists_all_engines_with_licenses():
     s = specs()
-    assert set(s) == {"kokoro", "qwen3", "voxtral", "fish"}
+    assert set(s) == {"zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2"}
+    assert list(s)[0] == "zonos3"          # the app's default narrator: first means preferred
     assert s["voxtral"].noncommercial and s["fish"].noncommercial
     assert not s["kokoro"].noncommercial and not s["qwen3"].noncommercial
+    assert not s["zonos3"].noncommercial and not s["voxcpm2"].noncommercial
     for spec in s.values():
         assert "en" in spec.languages and "fr" in spec.languages
         assert spec.cap_for("fr") > 0
+
+
+def test_the_new_engines_cover_every_app_language_under_a_permissive_licence():
+    s = specs()
+    for engine_id in ("zonos3", "voxcpm2"):
+        spec = s[engine_id]
+        assert set(spec.languages) == ALL_LANGS, engine_id
+        assert spec.license == "Apache-2.0" and not spec.noncommercial, engine_id
 
 
 def test_unknown_engine_is_a_clear_error():
@@ -149,10 +187,11 @@ def test_unknown_engine_is_a_clear_error():
 
 
 def test_clone_only_engines_reject_presets_before_loading():
-    fish = get_engine("fish")
-    fish.model = object()  # pretend loaded; must refuse before touching it
-    with pytest.raises(EngineError, match="reference clip"):
-        fish.synthesize(["Hello."], VoiceChoice("anything"), "en")
+    for engine_id in ("fish", "voxcpm2"):
+        engine = get_engine(engine_id)
+        engine.model = object()  # pretend loaded; must refuse before touching it
+        with pytest.raises(EngineError, match="reference clip"):
+            engine.synthesize(["Hello."], VoiceChoice("anything"), "en")
 
 
 def test_voice_fingerprints_differ_for_clips(tmp_path):
@@ -166,7 +205,8 @@ def test_voice_fingerprints_differ_for_clips(tmp_path):
 
 # ----------------------------------------------------------------------------- preset validation
 
-@pytest.mark.parametrize("engine_id, bad", [("kokoro", "george"), ("qwen3", "af_heart"), ("voxtral", "fr_femme")])
+@pytest.mark.parametrize("engine_id, bad", [("kokoro", "george"), ("qwen3", "af_heart"), ("voxtral", "fr_femme"),
+                                            ("zonos3", "george")])
 def test_unknown_preset_is_rejected_before_loading_weights(engine_id, bad, fake_loader):
     engine = get_engine(engine_id)
     with pytest.raises(EngineError, match=f"Unknown voice '{bad}'") as err:
@@ -207,6 +247,47 @@ def test_kokoro_rejects_unknown_preset_at_synthesis():
     with pytest.raises(EngineError, match="Unknown voice 'george'"):
         engine.synthesize(["Hello."], VoiceChoice("george"), "en")
     assert pipelines == []
+
+
+def test_zonos3_presets_cover_nine_languages_and_cloning_fills_the_rest():
+    spec = specs()["zonos3"]
+    assert len(spec.voices) == 25
+    assert {v.lang for v in spec.voices} == {"en", "fr", "es", "de", "it", "pt", "zh", "ko", "hi"}
+    assert set(spec.languages) - {v.lang for v in spec.voices} == {"ru", "ja", "ar", "nl"}
+    for lang in ("ru", "ja", "ar", "nl"):
+        with pytest.raises(EngineError, match="has no .* preset voice"):
+            default_preset(spec, lang)
+
+
+def test_zonos3_synthesises_with_the_preset_language_and_speed():
+    engine = get_engine("zonos3")
+    model = engine.model = FakeZonos3Model()
+    out = engine.synthesize(["Bonjour.", "Encore."], VoiceChoice("gaspard"), "fr", speed=1.2)
+    assert [a.size for a in out] == [441, 441]
+    assert [c["voice"] for c in model.calls] == ["gaspard", "gaspard"]
+    for call in model.calls:
+        assert call["lang_code"] == "fr" and call["speed"] == 1.2
+        assert call["text_normalization"] is False        # the engine normalises text itself
+
+
+def test_zonos3_clones_from_a_clip_without_a_transcript():
+    engine = get_engine("zonos3")
+    model = engine.model = FakeZonos3Model()
+    engine.synthesize(["Салют."], VoiceChoice(ref_audio="clip.wav"), "ru")
+    assert model.calls[0]["ref_audio"] == "clip.wav"
+    assert "voice" not in model.calls[0] or model.calls[0]["voice"] is None
+
+
+def test_voxcpm2_is_clone_only_and_uses_the_clip_for_every_chunk():
+    engine = get_engine("voxcpm2")
+    with pytest.raises(EngineError, match="reference clip"):
+        engine.load(VoiceChoice())
+    model = engine.model = FakeVoxCPM2Model()
+    out = engine.synthesize(["Un.", "Deux."], VoiceChoice(ref_audio="me.wav", ref_text="Bonjour."), "fr")
+    assert [a.size for a in out] == [480, 480]
+    assert all(c["ref_audio"] == "me.wav" and c["ref_text"] == "Bonjour." for c in model.calls)
+    with pytest.raises(EngineError, match="reference clip"):
+        engine.synthesize(["Trois."], VoiceChoice(), "fr")
 
 
 def test_qwen3_unknown_preset_is_not_synthesised_without_a_speaker():

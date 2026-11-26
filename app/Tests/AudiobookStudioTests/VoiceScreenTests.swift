@@ -40,8 +40,8 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
 @Test func catalogueListsPresetsThenReferenceVoices() throws {
     let f = try VoiceFixtures()
     let options = VoiceCatalog.options(engines: f.engines, voices: f.voices)
-    // 6 Qwen3 + 7 Voxtral + 21 Kokoro presets (Fish has none), then 11 library voices.
-    #expect(options.filter { $0.kind == .preset }.count == 34)
+    // 11 ZONOS3 + 6 Qwen3 + 7 Voxtral + 21 Kokoro presets (Fish and VoxCPM2 have none), then 11 library voices.
+    #expect(options.filter { $0.kind == .preset }.count == 45)
     #expect(options.filter { $0.kind == .library }.count == 11)
     #expect(Set(options.map(\.id)).count == options.count)
 
@@ -52,7 +52,7 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     #expect(heart.summary == nil)   // empty notes are dropped
 
     let siwis = try #require(options.first { $0.voiceId == "fr_siwis_female_book" })
-    #expect(siwis.kind == .library && siwis.engineIds == ["qwen3", "fish"] && siwis.installed)
+    #expect(siwis.kind == .library && siwis.engineIds == ["zonos3", "qwen3", "fish", "voxcpm2"] && siwis.installed)
     #expect(siwis.allowsCommercialUse(engines: f.engines))
     #expect(!siwis.allowsCommercialUse(engines: f.engines, engineFilter: "fish"))   // Fish licence is non-commercial
 
@@ -65,8 +65,8 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     #expect(clipOption.kind == .userClip && clipOption.license == "Your recording" && clipOption.voiceAllowsCommercialUse)
 
     let groups = VoiceCatalog.groups(VoiceCatalog.options(engines: f.engines, voices: f.voices + [clip]), engines: f.engines)
-    #expect(groups.map(\.title) == ["Your voices", "Reference voices for cloning", "Qwen3-TTS 1.7B presets",
-                                    "Voxtral TTS 4B presets", "Kokoro 82M (fast draft) presets"])
+    #expect(groups.map(\.title) == ["Your voices", "Reference voices for cloning", "ZONOS3-Mini presets",
+                                    "Kokoro 82M (fast draft) presets", "Qwen3-TTS 1.7B presets", "Voxtral TTS 4B presets"])
 }
 
 @Test func filtersByLanguageGenderEngineLicenceAndSearch() throws {
@@ -79,16 +79,16 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     // Book language (French) and male voices.
     var filter = VoiceFilter()
     filter.gender = "male"
-    #expect(ids(filter) == ["fr_male", "fr_cmltts_7142_male", "fr_kyutai_fabieng_male"])
+    #expect(ids(filter) == ["fr_male", "gaspard", "fr_cmltts_7142_male", "fr_kyutai_fabieng_male"])
 
     // No book open: the book-language filter keeps every language.
     #expect(ids(VoiceFilter(), book: nil).count == options.count)
     #expect(ids(VoiceFilter(language: .only("en")), book: "fr").contains("ryan"))
 
-    // French voices usable commercially: Kokoro's Siwis and the five library voices (cloned by Qwen3).
+    // French voices usable commercially: Kokoro's Siwis, ZONOS3's Gaspard and the library voices.
     filter = VoiceFilter(license: .commercial)
-    #expect(ids(filter) == ["ff_siwis", "fr_siwis_female_book", "fr_kyutai_estelle_female", "fr_cmltts_12205_female",
-                            "fr_cmltts_7142_male", "fr_kyutai_fabieng_male"])
+    #expect(ids(filter) == ["ff_siwis", "gaspard", "fr_siwis_female_book", "fr_kyutai_estelle_female",
+                            "fr_cmltts_12205_female", "fr_cmltts_7142_male", "fr_kyutai_fabieng_male"])
     filter.license = .personal
     #expect(ids(filter) == ["fr_female", "fr_male"])
     // Restricted to Fish, every reference voice becomes personal use only.
@@ -111,8 +111,8 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     let (model, defaults, suite) = try makeModel(f, book: "inspect_fr.json")
     defer { defaults.removePersistentDomain(forName: suite) }
 
-    // French book: the suggestion clones the first French library voice with Qwen3.
-    #expect(model.voiceSelection?.engineId == "qwen3" && model.voiceSelection?.refVoiceId == "fr_siwis_female_book")
+    // French book: the suggestion uses ZONOS3-Mini's French preset.
+    #expect(model.voiceSelection?.engineId == "zonos3" && model.voiceSelection?.presetId == "gaspard")
     model.voiceSelection?.speed = 1.25
 
     // Switching to Voxtral picks its French preset and keeps the speed; speech check follows the engine default.
@@ -125,7 +125,7 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     let kokoro = try #require(model.voiceSelection(switchingTo: "kokoro"))
     #expect(kokoro.presetId == "ff_siwis" && !kokoro.verify)
     // The engine in use returns the current narrator unchanged.
-    #expect(model.voiceSelection(switchingTo: "qwen3") == model.voiceSelection)
+    #expect(model.voiceSelection(switchingTo: "zonos3") == model.voiceSelection)
     #expect(model.voiceSelection(switchingTo: "nope") == nil)
 
     // A saved default for the language wins when it uses that engine.
@@ -135,13 +135,13 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     // A reference voice row: cloned by the current engine when it can clone.
     let options = model.voiceOptions
     let estelle = try #require(options.first { $0.voiceId == "fr_kyutai_estelle_female" })
-    #expect(model.voiceSelection(for: estelle)?.engineId == "qwen3")
+    #expect(model.voiceSelection(for: estelle)?.engineId == "zonos3")
     #expect(model.voiceSelection(for: estelle, preferredEngine: "fish")?.engineId == "fish")
     // From an engine that cannot clone: the best cloning engine (installed, commercial use first).
     model.performVoiceAction(.select(kokoro))
     #expect(model.voiceSelection?.engineId == "kokoro")
     let cloned = try #require(model.voiceSelection(for: estelle))
-    #expect(cloned.engineId == "qwen3" && cloned.refVoiceId == "fr_kyutai_estelle_female" && cloned.verify)
+    #expect(cloned.engineId == "zonos3" && cloned.refVoiceId == "fr_kyutai_estelle_female" && cloned.verify)
     #expect(estelle.isChosen(by: cloned) && !estelle.isChosen(by: kokoro))
 
     // A preset row keeps the speech-check choice when the engine does not change.
@@ -152,7 +152,7 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     #expect(VoiceCatalog.cloningEngine(candidates: ["qwen3", "fish"], current: nil, preferred: nil,
                                        engines: f.engines, models: f.models) == "qwen3")
     var noQwen = f.models
-    noQwen[0].installed = false
+    if let index = noQwen.firstIndex(where: { $0.engine == "qwen3" }) { noQwen[index].installed = false }
     #expect(VoiceCatalog.cloningEngine(candidates: ["qwen3", "fish"], current: nil, preferred: nil,
                                        engines: f.engines, models: noQwen) == "fish")
 }
@@ -198,9 +198,10 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     // 412,027 characters at 10.02 characters/s.
     #expect(abs((fishCard.bookEstimate?.seconds ?? 0) - 412_027 / 10.02) < 0.01)
 
+    let zonosCard = model.voiceEngineSummary(for: try #require(model.engineList?.engine("zonos3")))
+    #expect(zonosCard.isChosen)   // the default narrator for a French book
     let qwenCard = model.voiceEngineSummary(for: try #require(model.engineList?.engine("qwen3")))
-    #expect(qwenCard.isChosen && qwenCard.rate?.measurement.charsPerS == 51.04 && qwenCard.slowWarning == nil)
-    #expect(qwenCard.rateVoiceName == "SIWIS — studio narrator (F)")
+    #expect(!qwenCard.isChosen && qwenCard.slowWarning == nil)
 
     // Kokoro on an English voice that was never measured: the median of its measured voices.
     model.voiceSelection = VoiceSelection(engineId: "kokoro", presetId: "am_adam")
@@ -210,7 +211,7 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
 
     // Not installed / unknown install state.
     var models = f.models
-    models[1].installed = false
+    if let index = models.firstIndex(where: { $0.engine == "voxtral" }) { models[index].installed = false }
     model.preload(models: models)
     #expect(model.voiceEngineSummary(for: try #require(model.engineList?.engine("voxtral"))).install == .notInstalled(downloadGb: 2.5))
     #expect(model.isEngineMissing("voxtral") && !model.isSpeechCheckModelMissing)
@@ -291,23 +292,24 @@ private func makeModel(_ f: VoiceFixtures, book: String? = nil) throws -> (AppMo
     defer { defaults.removePersistentDomain(forName: suite) }
 
     let choices = model.voiceComparisonChoices
-    // French: Qwen3 clones (5), Voxtral presets (2), Fish clones (5), Kokoro's Siwis (1).
-    #expect(choices.count == 13)
-    #expect(choices.first?.id == "qwen3|fr_siwis_female_book")
+    // French: ZONOS3 presets (1) and clones (5), Qwen3 clones (5), Voxtral presets (2), Fish clones (5),
+    // Kokoro's Siwis (1), VoxCPM2 clones (5).
+    #expect(choices.count == 24)
+    #expect(choices.first?.id == "zonos3|gaspard")
     #expect(choices.contains { $0.id == "voxtral|fr_female" && $0.label == "French female · Voxtral TTS 4B" })
 
     // Defaults: A is the narrator, B the next voice; picks that disappear fall back.
     var ids = model.resolvedComparisonIds(in: choices)
-    #expect(ids.a == "qwen3|fr_siwis_female_book" && ids.b == "qwen3|fr_kyutai_estelle_female")
+    #expect(ids.a == "zonos3|gaspard" && ids.b == "zonos3|fr_siwis_female_book")
     model.voiceLab.compareAId = "kokoro|ff_siwis"
     model.voiceLab.compareBId = "kokoro|ff_siwis"
     ids = model.resolvedComparisonIds(in: choices)
-    #expect(ids.a == "kokoro|ff_siwis" && ids.b == "qwen3|fr_siwis_female_book")
+    #expect(ids.a == "kokoro|ff_siwis" && ids.b == "zonos3|gaspard")
 
     // Both sides run at the narrator's speed.
     model.voiceSelection?.speed = 1.1
     let a = model.voiceSelection(for: try #require(choices.first { $0.id == "kokoro|ff_siwis" }))
-    let b = model.voiceSelection(for: try #require(choices.first { $0.id == "qwen3|fr_siwis_female_book" }))
+    let b = model.voiceSelection(for: try #require(choices.first { $0.id == "zonos3|gaspard" }))
     #expect(a.speed == 1.1 && !a.verify && b == model.voiceSelection)
 
     #expect(model.startVoiceComparison(a, a) == nil)

@@ -96,7 +96,9 @@ enum Fixtures {
 
 @Test func decodesEngines() throws {
     let list = try Fixtures.decode("engines.json", as: EngineList.self)
-    #expect(list.engines.map(\.id) == ["qwen3", "voxtral", "fish", "kokoro"])
+    #expect(list.engines.map(\.id) == ["zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2"])
+    #expect(list.engine("zonos3")?.voices.count == 11 && list.engine("zonos3")?.downloadGb == 1.4)
+    #expect(list.engine("voxcpm2")?.supportsPresets == false && list.engine("voxcpm2")?.supportsCloning == true)
     let fish = try #require(list.engine("fish"))
     #expect(fish.noncommercial && !fish.supportsPresets && fish.supportsCloning && fish.voices.isEmpty)
     #expect(list.engine("kokoro")?.supportsSpeed == true && list.engine("kokoro")?.voices.count == 21)
@@ -157,11 +159,13 @@ enum Fixtures {
 
 @Test func decodesModelsList() throws {
     let list = try Fixtures.decode("models_list.json", as: ModelList.self)
-    #expect(list.models.map(\.engine) == ["qwen3", "voxtral", "fish", "kokoro", "whisper"])
-    let qwen = try #require(list.models.first)
+    #expect(list.models.map(\.engine) == ["zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2", "whisper", "qwen3-asr"])
+    let qwen = try #require(list.models.first { $0.engine == "qwen3" })
     #expect(qwen.parts.count == 2 && qwen.installed && qwen.noncommercial == false)
     #expect(qwen.installedBytes == 3_080_141_538 + 3_104_158_788)
-    #expect(list.models[1].noncommercial == true)
+    #expect(list.models.first { $0.engine == "voxtral" }?.noncommercial == true)
+    #expect(list.models.first { $0.engine == "zonos3" }?.downloadGb == 1.4)
+    #expect(list.models.first { $0.engine == "qwen3-asr" }?.license == "Apache-2.0")
 }
 
 @Test func decodesSampleEvents() throws {

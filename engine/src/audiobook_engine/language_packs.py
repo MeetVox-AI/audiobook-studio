@@ -20,8 +20,9 @@ from collections.abc import Callable
 from . import languages, paths
 
 DEFAULT_ENABLED = ("en",)
-# Preference when several engines could speak a language: best quality and permissive licence first.
-_ENGINE_ORDER = ("qwen3", "kokoro", "voxtral", "fish")
+# Preference when several engines could speak a language: the default narrator first, then fast drafts, then
+# the heavier engines. Mirrors the order in tts.specs().
+_ENGINE_ORDER = ("zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2")
 _BYTES_PER_SECOND = 48_000  # 24 kHz mono 16-bit: an estimate of a library clip's size from its duration
 
 
@@ -103,7 +104,12 @@ def info(code: str) -> dict:
     lang = languages.get(code)
     engines = _engine_rows(lang.code)
     ready = any(e["installed"] for e in engines)
-    recommended = next((e["id"] for e in engines if e["installed"]), engines[0]["id"] if engines else None)
+    installed = [e for e in engines if e["installed"]]
+    # A built-in voice for this language beats a clone-only engine (ZONOS3 has no Russian, Japanese, Arabic or
+    # Dutch preset, so those recommend Qwen3-TTS or Voxtral when installed).
+    recommended = next((e["id"] for e in installed if e["native_presets"]), None)
+    if recommended is None:
+        recommended = installed[0]["id"] if installed else (engines[0]["id"] if engines else None)
     return {"code": lang.code, "name": lang.name, "native": lang.native, "rtl": lang.rtl,
             "enabled": lang.code in enabled(), "ready": ready, "recommended": recommended,
             "engines": engines, "voices": _voice_counts(lang.code)}

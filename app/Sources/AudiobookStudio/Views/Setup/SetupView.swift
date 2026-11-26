@@ -452,7 +452,7 @@ private struct ModelsStep: View {
                 VStack(alignment: .leading, spacing: Theme.Space.m) {
                     LicenseExplainer()
                     VStack(spacing: Theme.Space.s) {
-                        ForEach(SetupCatalog.tiers) { card($0, tag: $0.id == "qwen3" ? "Recommended" : nil) }
+                        ForEach(SetupCatalog.tiers) { card($0, tag: $0.id == "zonos3" ? "Recommended" : nil) }
                     }
                     Text(SetupCatalog.benchmarkNote)
                         .font(.caption).foregroundStyle(.secondary)
@@ -462,18 +462,18 @@ private struct ModelsStep: View {
                     VStack(spacing: Theme.Space.s) {
                         ToolsLine()
                         if !flow.languagePlan.add.isEmpty { VoicesLine() }
-                        card(SetupCatalog.quality, tag: "Optional, recommended")
+                        ForEach([SetupCatalog.quality, SetupCatalog.multilingualCheck]) { card($0, tag: "Optional, recommended") }
                     }
                     DisclosureGroup("Other options", isExpanded: $showOther) {
                         VStack(spacing: Theme.Space.s) {
-                            Text("Not one of the three tiers. Use it for languages the tiers do not cover.")
+                            Text("Not one of the default options. Use it for languages the defaults do not cover, or for a studio-quality clone.")
                                 .font(.callout).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             ForEach(SetupCatalog.other) { card($0, tag: nil) }
                         }
                         .padding(.top, Theme.Space.s)
                     }
-                    .accessibilityLabel("Other options: Voxtral 4B, for personal use only")
+                    .accessibilityLabel("Other options: Voxtral 4B and VoxCPM2")
                     CoverageNotice()
                 }
                 .padding(1)
@@ -489,8 +489,8 @@ private struct ModelsStep: View {
                 Button("Back") { flow.step = .languages }.accessibilityLabel("Go back")
             }
         }
-        .onAppear { showOther = flow.chosen.contains("voxtral") }
-        .onChange(of: flow.chosen.contains("voxtral")) { _, on in if on { showOther = true } }
+        .onAppear { showOther = flow.chosen.contains("voxtral") || flow.chosen.contains("voxcpm2") }
+        .onChange(of: flow.chosen.contains("voxtral") || flow.chosen.contains("voxcpm2")) { _, on in if on { showOther = true } }
     }
 
     private func card(_ choice: SetupModelChoice, tag: String?) -> some View {

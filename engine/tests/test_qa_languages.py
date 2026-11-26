@@ -183,7 +183,7 @@ def test_whisper_receives_the_bare_language_code():
             return type("O", (), {"text": "x"})()
 
     for code in ("de", "zh", "ar"):
-        v = verify.Verifier(code)
+        v = verify.Verifier(code, backend="whisper")   # this test is about Whisper's arguments
         v.model = M()
         seen.clear()
         v.transcribe(__import__("numpy").zeros(10, "float32"))

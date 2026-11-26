@@ -11,7 +11,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" HOMEBREW_NO_AUTO_UPDATE=1 H
 PREFIX="${AUDIOBOOK_PREFIX:-$HOME/Library/Application Support/AudiobookStudio}"
 REPO="${AUDIOBOOK_REPO:-https://github.com/MeetVox-AI/audiobook-studio.git}"
 SRC="$PREFIX/source"
-MIN_FREE_GB=12
+MIN_FREE_GB=8
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }
@@ -44,7 +44,7 @@ say "Setting up the Python environment"
 CLI="$SRC/engine/.venv/bin/audiobook-engine"
 if [[ "${NO_MODELS:-}" != "1" ]]; then
   say "Downloading the voice models (several GB, once)"
-  for m in kokoro qwen3 whisper; do "$CLI" models download "$m"; done
+  for m in zonos3 kokoro whisper qwen3-asr; do "$CLI" models download "$m"; done
   say "Downloading the reference voices"
   for v in fr_siwis_female_book fr_cmltts_7142_male en_librittsr_laura_caldwell_female_us en_librittsr_bill_boerst_male_us; do
     "$CLI" voices download "$v"

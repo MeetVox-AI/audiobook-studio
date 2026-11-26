@@ -279,7 +279,7 @@ extension AppModel {
 
     /// Engines known to be slower than real time on Apple silicon (warned about before a conversion when
     /// this Mac has no measurement yet). Measured speeds always take precedence.
-    static let bookSlowEngines: Set<String> = ["fish"]
+    static let bookSlowEngines: Set<String> = ["fish", "voxcpm2"]
 
     /// Languages offered in the book's language picker: the enabled languages (Settings > Languages; English and
     /// French until the list is loaded) plus the book's own, sorted by English name.

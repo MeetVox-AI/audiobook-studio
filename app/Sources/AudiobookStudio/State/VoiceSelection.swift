@@ -13,7 +13,7 @@ struct VoiceSelection: Codable, Hashable, Sendable {
     var refVoiceId: String?
     /// Narration speed, 0.75...1.5 in the UI (the engine accepts 0.5...2.0).
     var speed: Double
-    /// "Check every sentence with speech recognition" (Whisper; about +15% time).
+    /// "Check every sentence with speech recognition" (about +15% time).
     var verify: Bool
 
     init(engineId: String, presetId: String? = nil, refVoiceId: String? = nil, speed: Double = 1.0, verify: Bool? = nil) {
@@ -123,12 +123,21 @@ struct VoiceSelection: Codable, Hashable, Sendable {
             if a.element.noncommercial != b.element.noncommercial { return !a.element.noncommercial }
             return a.offset < b.offset
         }.map(\.element)
-        for engine in candidates {
-            if engine.supportsPresets, let preset = engine.voices.first(where: { $0.lang == language }) {
-                return VoiceSelection(engineId: engine.id, presetId: preset.id)
+        // A native voice beats a clone, but only among what is installed: a language pack installs its
+        // reference clips, so an installed engine can clone even when another engine has an unused preset
+        // (and that engine would have to be downloaded first). Within each pool, native voices come first.
+        let installed = candidates.filter { installedEngines.contains($0.id) }
+        let rest = candidates.filter { !installedEngines.contains($0.id) }
+        for pool in [installed, rest] {
+            for engine in pool where engine.supportsPresets {
+                if let preset = engine.voices.first(where: { $0.lang == language }) {
+                    return VoiceSelection(engineId: engine.id, presetId: preset.id)
+                }
             }
-            if engine.supportsCloning, let ref = voices.first(where: { $0.lang == language && $0.isInstalled }) {
-                return VoiceSelection(engineId: engine.id, refVoiceId: ref.id)
+            for engine in pool where engine.supportsCloning {
+                if let ref = voices.first(where: { $0.lang == language && $0.isInstalled }) {
+                    return VoiceSelection(engineId: engine.id, refVoiceId: ref.id)
+                }
             }
         }
         return nil

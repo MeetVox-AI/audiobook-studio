@@ -12,7 +12,8 @@ import os
 #   2: voice clean-up (voices add --isolate/--enhance, models voice-isolation/voice-enhancer) and voices replace
 #   3: the larger reference-voice library (36 French narrators, ~30 for most languages) and partial downloads
 #      (`source_bytes`): an older engine would keep showing the old, short voice list
-API_VERSION = 3
+#   4: ZONOS3-Mini (default narrator), VoxCPM2 (studio cloning) and the Qwen3-ASR quality check
+API_VERSION = 4
 
 # Hugging Face's download library sends anonymous usage information unless told otherwise; DO_NOT_TRACK is the
 # cross-tool convention. setdefault: a person who set these on purpose keeps their choice.

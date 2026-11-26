@@ -22,7 +22,7 @@
 |---|---|
 | 🔒 **Private by design** | Narration runs on your Mac's GPU with open AI voice models. After the one-time model download it works offline. Nothing is uploaded, ever. |
 | 🎧 **A real audiobook, not a long MP3** | One `.m4b` with chapter markers, cover art, title and author, normalised loudness and the audiobook tag, checked with ffprobe after every conversion, so audiobook players can show chapters and your cover. |
-| 🗣️ **Voices you can actually pick** | Four engines, **13 languages**, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
+| 🗣️ **Voices you can actually pick** | Six engines, **13 languages**, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
 | ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
 | ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
 | 🔄 **Keeps itself up to date** | The app checks for new versions daily and installs them in the background (signed updates only). You can turn it off in Settings. |
@@ -50,11 +50,16 @@ English is on by default. **Add French and the other languages in Settings → L
 
 | | Languages |
 |---|---|
-| Qwen3-TTS (default engine) | English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean |
+| ZONOS3-Mini (default engine) | All thirteen: English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean, Hindi, Arabic, Dutch |
+| Qwen3-TTS | English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean (the default for Russian and Japanese) |
 | Voxtral | the above Latin-script ones plus Dutch, Hindi and Arabic |
 | Kokoro (fast drafts) | English, French, Spanish, Italian, Portuguese, Hindi |
+| VoxCPM2 (studio) | any of the thirteen, by cloning a reference voice |
 
-Every language was checked by narrating a test book and transcribing it back with Whisper. The text rules (numbers, abbreviations, chapter headings) for the non-English/French languages were written without native-speaker review, so please report anything that sounds wrong.
+ZONOS3-Mini ships voices in nine of those languages; Russian, Japanese, Arabic and Dutch use one of the
+reference voices, cloned. Every language was checked by narrating a test book and transcribing it back with
+Whisper or Qwen3-ASR. The text rules (numbers, abbreviations, chapter headings) for the non-English/French
+languages were written without native-speaker review, so please report anything that sounds wrong.
 
 ## How fast is it?
 
@@ -62,9 +67,11 @@ Measured on an Apple M4 Pro (48 GB), not quoted from a vendor. "×" means times 
 
 | Engine | Best for | Speed | Licence |
 |---|---|---|---|
+| **ZONOS3-Mini** *(default)* | Everyday narration in any of the thirteen languages, 44.1 kHz, built-in voices or cloning | ≈ 5–6× with preset voices, ≈ 2× when cloning | Apache-2.0 |
 | **Kokoro 82M** | Fast drafts: English, French, Spanish, Italian, Portuguese, Hindi | ≈ 14–18× — a 6½-hour French novel in 32 minutes | Apache-2.0 |
-| **Qwen3-TTS 1.7B** *(default)* | Best open quality: English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean | ≈ 3–5× with preset voices, ≈ 2.4× when cloning, speech check included | Apache-2.0 |
+| **Qwen3-TTS 1.7B** | Russian and Japanese presets, and a quality alternative in its ten languages | ≈ 3–5× with preset voices, ≈ 2.4× when cloning | Apache-2.0 |
 | **Voxtral 4B** | Native presets in nine languages, including Dutch, Hindi and Arabic | ≈ 1.7–1.9× | CC BY-NC 4.0 (personal use) |
+| **VoxCPM2 4-bit** | Studio-quality clones at 48 kHz | ≈ 0.6× — a 10-hour book takes about 17 hours | Apache-2.0 |
 | **Fish S2 Pro** | Highest-fidelity cloning | ≈ 0.56× — slower than real time | Non-commercial |
 
 Your Mac measures itself, so the app's estimates are for *your* machine.
@@ -75,7 +82,7 @@ Your Mac measures itself, so the app's estimates are for *your* machine.
 
 **2. Open Audiobook Studio.** On first launch it sets up the narration engine for you: the app drives a local Python engine and the AI voice models, which are too large to ship inside the app. The setup installs `uv`, `ffmpeg` and `espeak-ng` with Homebrew if needed, puts the engine under `~/Library/Application Support/AudiobookStudio`, and downloads the models you choose, with every size shown first. You need an Apple Silicon Mac, macOS 26 or later, and [Homebrew](https://brew.sh).
 
-If you prefer Terminal, the same [short script](scripts/install-engine.sh) does it (it also downloads the default models and four reference voices, about **12 GB**, one time):
+If you prefer Terminal, the same [short script](scripts/install-engine.sh) does it (it also downloads the default models and four reference voices, about **7 GB**, one time):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/scripts/install-engine.sh | bash
@@ -88,13 +95,13 @@ curl -fsSL https://raw.githubusercontent.com/MeetVox-AI/audiobook-studio/main/sc
 <details>
 <summary><b>Build from source instead</b></summary>
 
-Requirements: Apple Silicon Mac, macOS 26 or later, Xcode 26 command-line tools, Homebrew and about 12 GB free.
+Requirements: Apple Silicon Mac, macOS 26 or later, Xcode 26 command-line tools, Homebrew and about 8 GB free.
 
 ```bash
 git clone https://github.com/MeetVox-AI/audiobook-studio.git
 cd audiobook-studio
 make setup        # installs tools, the engine, models and voices, and builds app/build/AudiobookStudio.app
-make models-all   # optional: the non-commercial engines (Voxtral, Fish S2 Pro)
+make models-all   # optional: Qwen3-TTS, Voxtral, Fish S2 Pro and VoxCPM2
 ```
 
 </details>
@@ -105,7 +112,7 @@ make models-all   # optional: the non-commercial engines (Voxtral, Fish S2 Pro)
 AudiobookStudio.app (SwiftUI)  ──runs──▶  audiobook-engine (Python CLI, JSON lines on stdout)
                                           ├─ ingest: EPUB (TOC-anchored chapters) / PDF (outline, headings)
                                           ├─ text: en/fr normalisation (numbers, dates, currency, abbreviations)
-                                          ├─ TTS: Kokoro · Qwen3-TTS · Voxtral · Fish S2 Pro (mlx-audio)
+                                          ├─ TTS: ZONOS3-Mini · Kokoro · Qwen3-TTS · Voxtral · VoxCPM2 · Fish S2 Pro (mlx-audio)
                                           ├─ QA: Whisper speech check, regenerates mismatched sentences
                                           └─ ffmpeg: loudness (−20 LUFS), AAC, chapters, cover → .m4b
 ```
@@ -129,10 +136,13 @@ Every command prints JSON (one object per line). Re-running an interrupted conve
 
 | Engine | Languages | Voices | Licence | Speed on an M4 Pro* |
 |---|---|---|---|---|
+| ZONOS3-Mini (default) | all 13 | 25 presets in nine languages; any language by cloning | Apache-2.0 | ≈ 5–6× real time (≈ 2× cloning) |
 | Kokoro 82M | en, fr, es, it, pt, hi | 20 English presets; draft-quality voices for the others | Apache-2.0 | ≈ 14–18× real time |
-| Qwen3-TTS 1.7B (default) | en, fr, es, de, it, pt, ru, zh, ja, ko | Native presets in English, Chinese, Japanese, Korean; any language by cloning | Apache-2.0 | ≈ 3–5× presets, ≈ 2.4× cloning |
+| Qwen3-TTS 1.7B | en, fr, es, de, it, pt, ru, zh, ja, ko | Native presets in English, Chinese, Japanese, Korean; any language by cloning | Apache-2.0 | ≈ 3–5× presets, ≈ 2.4× cloning |
 | Voxtral 4B | en, fr, es, de, it, pt, nl, hi, ar | Presets in all nine (Arabic: one male voice) | CC BY-NC 4.0 (personal use) | ≈ 1.7–1.9× real time |
+| VoxCPM2 4-bit | all 13 | cloning only, 48 kHz | Apache-2.0 | ≈ 0.6× (slower than real time) |
 | Fish S2 Pro | en, fr (+78) | cloning only | Fish Audio Research Licence (non-commercial) | ≈ 0.56× (slower than real time) |
+| Qwen3-ASR 0.6B (quality check) | all 13 except English and French (Whisper keeps those) | — | Apache-2.0 | used by the speech check |
 
 \* Measured on the author's machine with the speech check on. Your Mac measures itself: run `make bench`, or make
 a sample; every time estimate in the app uses those measurements.

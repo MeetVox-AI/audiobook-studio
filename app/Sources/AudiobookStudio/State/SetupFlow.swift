@@ -30,15 +30,21 @@ enum SetupCatalog {
     static let freeForAnyUse = "Free for any use"
     static let personalUseOnly = "Personal use only"
 
-    /// The three tiers, from the smallest to the largest download.
+    /// The narration tiers, best default first.
     static let tiers: [SetupModelChoice] = [
+        SetupModelChoice(id: "zonos3", title: "Narrator", modelName: "ZONOS3-Mini", maker: "Zyphra",
+                         detail: "The default narrator: 25 built-in voices in nine languages, and cloning in all thirteen. 44.1 kHz and quick enough for any Apple Silicon Mac.",
+                         gb: 1.4, licenseName: "Apache-2.0",
+                         speed: "Real time on an M3 MacBook Air, several times faster than listening on an M4 Pro",
+                         bookTime: "A 10-hour book takes a few hours.",
+                         listTitle: "Narrator (ZONOS3-Mini)"),
         SetupModelChoice(id: "kokoro", title: "Quick", modelName: "Kokoro 82M", maker: "hexgrad",
                          detail: "Good for drafts and short tests. English is very good; the other languages are draft quality.",
                          gb: 0.35, licenseName: "Apache-2.0",
                          speed: "About 14-18x faster than listening", bookTime: "A 10-hour book takes about 40 minutes.",
                          listTitle: "Quick (Kokoro 82M)"),
         SetupModelChoice(id: "qwen3", title: "High quality", modelName: "Qwen3-TTS 1.7B", maker: "Qwen (Alibaba)",
-                         detail: "Expressive narration in ten languages. It can clone a voice from a short clip.",
+                         detail: "Expressive narration in ten languages, and the default for Russian and Japanese. It can clone a voice from a short clip.",
                          gb: 6.2, licenseName: "Apache-2.0",
                          speed: "About 3-5x faster than listening with its preset voices, about 2.4x when cloning a voice",
                          bookTime: "A 10-hour book takes about 2-4 hours.",
@@ -50,17 +56,25 @@ enum SetupCatalog {
                          listTitle: "Very high quality (Fish Audio S2 Pro)"),
     ]
     static let quality = SetupModelChoice(id: "whisper", title: "Quality check", modelName: "Whisper large-v3-turbo", maker: "OpenAI",
-                                          detail: "Listens back to every chapter to catch skipped or garbled words. It adds about 15% to the time, and it also transcribes your own voice clips.",
+                                          detail: "Listens back to every chapter in English and French to catch skipped or garbled words. It also transcribes your own voice clips.",
                                           gb: 1.6, licenseName: "MIT", listTitle: "Quality check (Whisper large-v3-turbo)")
-    /// Not one of the three tiers: a non-commercial model that also narrates Dutch and Arabic.
+    static let multilingualCheck = SetupModelChoice(id: "qwen3-asr", title: "Quality check", modelName: "Qwen3-ASR 0.6B", maker: "Qwen (Alibaba)",
+                                                    detail: "Listens back in the other eleven languages, where it is more accurate than Whisper: German, Spanish, Italian, Portuguese, Russian, Chinese, Japanese, Korean, Hindi, Arabic and Dutch.",
+                                                    gb: 1.0, licenseName: "Apache-2.0", listTitle: "Quality check (Qwen3-ASR 0.6B)")
+    /// Not one of the default tiers: a non-commercial model for Dutch and Arabic, and the studio-quality cloner.
     static let other: [SetupModelChoice] = [
         SetupModelChoice(id: "voxtral", title: "Voxtral 4B", modelName: "Voxtral 4B", maker: "Mistral AI",
                          detail: "Native voices in nine languages. This is the way to narrate Dutch and Arabic.",
                          gb: 2.5, licenseName: "CC BY-NC 4.0", noncommercial: true,
                          speed: "About 1.7-1.9x faster than listening", bookTime: nil,
                          listTitle: "Voxtral 4B"),
+        SetupModelChoice(id: "voxcpm2", title: "Studio quality", modelName: "VoxCPM2 4-bit", maker: "OpenBMB",
+                         detail: "The closest match to a reference voice, at 48 kHz. It needs a reference clip: it has no built-in voices.",
+                         gb: 2.3, licenseName: "Apache-2.0",
+                         speed: "Slower than real time (about 1.7x)", bookTime: "A 10-hour book takes about 17 hours.",
+                         listTitle: "Studio quality (VoxCPM2 4-bit)"),
     ]
-    static let all = tiers + [quality] + other
+    static let all = tiers + [quality, multilingualCheck] + other
     static let benchmarkNote = "Times are for a 10-hour book, measured on an Apple M4 Pro. Yours will differ; the app measures your Mac."
     static let rightsNote = "Audiobooks made from books you do not hold the rights to are for personal use only."
     static let freeLicenceMeaning = "Free for any use (Apache-2.0, MIT): make audiobooks for any purpose, including selling them."
@@ -70,6 +84,8 @@ enum SetupCatalog {
     /// at this step, so `languages list` cannot be asked); `SetupTests` compares it with the engine fixtures so a
     /// drift is noticed. Whisper is not a narrator and is not listed.
     static let engineLanguages: [String: [String]] = [
+        "zonos3": ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"],
+        "voxcpm2": ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"],
         "kokoro": ["en", "fr", "es", "it", "pt", "hi"],
         "qwen3": ["en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja", "ko"],
         "voxtral": ["en", "fr", "es", "de", "it", "pt", "nl", "hi", "ar"],
@@ -77,6 +93,7 @@ enum SetupCatalog {
     ]
     /// Names used in sentences ("Russian needs High quality (Qwen3-TTS 1.7B)").
     static let engineNames: [String: String] = [
+        "zonos3": "Narrator (ZONOS3-Mini)", "voxcpm2": "Studio quality (VoxCPM2 4-bit)",
         "kokoro": "Quick (Kokoro 82M)", "qwen3": "High quality (Qwen3-TTS 1.7B)", "voxtral": "Voxtral 4B",
         "fish": "Very high quality (Fish Audio S2 Pro)",
     ]
@@ -107,7 +124,8 @@ enum SetupCatalog {
     /// Only a suggestion: nothing is chosen until the person accepts it.
     static func suggestion(for needed: [String]) -> [String] {
         guard !needed.isEmpty else { return [] }
-        let ids = ["kokoro", "qwen3", "voxtral", "fish"]
+        // VoxCPM2 is left out on purpose: it has no built-in voices, so it cannot cover a language by itself.
+        let ids = ["zonos3", "kokoro", "qwen3", "voxtral", "fish"]
         var best: (ids: [String], gb: Double)?
         for mask in 1..<(1 << ids.count) {
             let subset = ids.enumerated().filter { mask & (1 << $0.offset) != 0 }.map(\.element)
@@ -119,7 +137,7 @@ enum SetupCatalog {
     }
 
     /// Which engine is picked first when several could narrate a language (a default, never a lock).
-    static let preference = ["qwen3", "kokoro", "voxtral", "fish"]
+    static let preference = ["zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2"]
 
     /// The narration engines that speak `code`, in preference order.
     static func candidates(for code: String) -> [String] {
@@ -273,7 +291,7 @@ final class SetupFlow {
     /// The person changed the languages in this session: reopening the setup keeps their choice.
     private(set) var languagesEdited = false
     /// What the person ticked (today's defaults count as ticked): never removed behind their back.
-    var userChosen: Set<String> = ["kokoro", "qwen3"]
+    var userChosen: Set<String> = ["zonos3", "kokoro"]
     /// Why the last untick was refused, in words for a person; cleared by the next change.
     private(set) var notice: String?
     /// Everything that will be downloaded or used: the person's ticks plus the engines the languages require.
@@ -390,8 +408,13 @@ final class SetupFlow {
         let drafts = lockedLanguages("kokoro").filter { $0 != "en" }
         guard !drafts.isEmpty else { return nil }
         var better: [String] = []
-        if drafts.allSatisfy({ SetupCatalog.engineLanguages["qwen3"]?.contains($0) == true }) { better.append("High quality") }
-        if drafts.allSatisfy({ SetupCatalog.engineLanguages["voxtral"]?.contains($0) == true }) { better.append("Voxtral 4B (under Other options)") }
+        if drafts.allSatisfy({ SetupCatalog.engineLanguages["zonos3"]?.contains($0) == true }) {
+            better.append("Narrator")
+        } else if drafts.allSatisfy({ SetupCatalog.engineLanguages["qwen3"]?.contains($0) == true }) {
+            better.append("High quality")
+        } else if drafts.allSatisfy({ SetupCatalog.engineLanguages["voxtral"]?.contains($0) == true }) {
+            better.append("Voxtral 4B (under Other options)")
+        }
         let tail = better.isEmpty ? "" : " \(better.joined(separator: " or ")) gives better voices."
         return "Draft quality for \(SetupCatalog.languageList(drafts)).\(tail)"
     }
