@@ -73,13 +73,13 @@ class FishEngine:
 
     def synthesize(self, texts: list[str], voice: VoiceChoice, lang: str, speed: float = 1.0,
                    seed: int | None = None) -> list[np.ndarray]:
-        import mlx.core as mx
-
         if self.model is None:
             raise EngineError("Model not loaded")
         if not voice.ref_audio:
             raise EngineError(_NEEDS_CLIP)
         if seed is not None:
+            import mlx.core as mx
+
             mx.random.seed(seed)
         ref = self._ref(voice.ref_audio)
         out = []

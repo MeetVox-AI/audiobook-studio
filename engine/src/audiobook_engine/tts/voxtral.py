@@ -166,8 +166,6 @@ class VoxtralEngine:
 
     def synthesize(self, texts: list[str], voice: VoiceChoice, lang: str, speed: float = 1.0,
                    seed: int | None = None) -> list[np.ndarray]:
-        import mlx.core as mx
-
         if self.model is None:
             raise EngineError("Model not loaded")
         if not voice.preset:
@@ -175,6 +173,8 @@ class VoxtralEngine:
         check_preset(self.spec, voice)
         self._check_voice_installed(voice.preset)
         if seed is not None:
+            import mlx.core as mx
+
             mx.random.seed(seed)
         out = []
         for t in texts:

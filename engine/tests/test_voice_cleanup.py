@@ -4,6 +4,9 @@ except in the last tests, which use the real models when they are downloaded (sk
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from functools import cache
 
 import numpy as np
 import pytest
@@ -227,13 +230,30 @@ def _installed(model_id):
     return modelstore._local_dir(modelstore.assets(model_id)[0]) is not None
 
 
+@cache
+def _metal_available() -> bool:
+    """mlx.core aborts the whole process (it does not raise) when the Mac has no Metal device, as in a
+    virtual machine, a CI runner or a headless SSH session. Probe in a child process so the suite skips the
+    real-model tests instead of dying."""
+    try:
+        probe = subprocess.run([sys.executable, "-c", "import mlx.core"], capture_output=True, timeout=180)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return probe.returncode == 0
+
+
+def _ready_for_real_models(model_id) -> bool:
+    return _installed(model_id) and _metal_available()
+
+
 def _noisy_tone(seconds=2.0):
     t = np.arange(int(seconds * cleanup.SR)) / cleanup.SR
     rng = np.random.default_rng(0)
     return (0.3 * np.sin(2 * np.pi * 220 * t) + 0.05 * rng.standard_normal(t.size)).astype(np.float32)
 
 
-@pytest.mark.skipif(not _installed(modelstore.ISOLATION_ID), reason="DeepFilterNet3 not downloaded")
+@pytest.mark.skipif(not _ready_for_real_models(modelstore.ISOLATION_ID),
+                    reason="DeepFilterNet3 not downloaded or no Metal device")
 def test_real_isolation_returns_audio_of_the_same_length():
     x = _noisy_tone()
     y = cleanup.isolate(x)
@@ -241,7 +261,8 @@ def test_real_isolation_returns_audio_of_the_same_length():
     assert np.isfinite(y).all()
 
 
-@pytest.mark.skipif(not _installed(modelstore.ENHANCER_ID), reason="MossFormer2-SE not downloaded")
+@pytest.mark.skipif(not _ready_for_real_models(modelstore.ENHANCER_ID),
+                    reason="MossFormer2-SE not downloaded or no Metal device")
 def test_real_enhancer_returns_audio_of_the_same_length():
     x = _noisy_tone()
     y = cleanup.enhance(x)

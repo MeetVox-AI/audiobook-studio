@@ -163,8 +163,6 @@ class Qwen3Engine:
 
     def synthesize(self, texts: list[str], voice: VoiceChoice, lang: str, speed: float = 1.0,
                    seed: int | None = None) -> list[np.ndarray]:
-        import mlx.core as mx
-
         if lang not in LANG:
             raise EngineError(f"Qwen3-TTS: unsupported language '{lang}'")
         self._check_voice(voice)
@@ -174,6 +172,8 @@ class Qwen3Engine:
         if not voice.ref_audio:
             self._check_speaker(model, voice.preset)
         if seed is not None:
+            import mlx.core as mx
+
             mx.random.seed(seed)
         longest = max(len(t) for t in texts)
         from ..audio.validate import seconds_per_char

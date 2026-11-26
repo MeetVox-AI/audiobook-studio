@@ -8,6 +8,8 @@
 
 [**⬇ Download for macOS**](https://github.com/MeetVox-AI/audiobook-studio/releases/latest) · Apple Silicon · macOS 26 or later · free & open source
 
+[![CI](https://github.com/MeetVox-AI/audiobook-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/MeetVox-AI/audiobook-studio/actions/workflows/ci.yml)
+
 <img src="docs/images/book.png" alt="Audiobook Studio: choose chapters, a narrator and hear a sample before you convert" width="860">
 
 </div>
@@ -192,6 +194,12 @@ Use Audiobook Studio lawfully: convert only books you own or have the right to u
 
 `scripts/release.sh` builds the app with hardened runtime, signs it with your **Developer ID Application** certificate, packs the DMG, submits it to Apple for notarization, staples the ticket and verifies it with Gatekeeper. One-time setup: a Developer ID Application certificate in the login keychain, and notarization credentials stored with
 `xcrun notarytool store-credentials AC_NOTARY --apple-id <id> --team-id <TEAMID> --password <app-specific password>` (or an App Store Connect API key with `--key/--key-id/--issuer`).
+
+## Contributing
+
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains the two halves of the project,
+how to run both test suites (no model download, no GPU), the rule for changing the engine/app API, and the design
+and privacy rules. CI builds the app and runs the tests on every pull request.
 
 ## Licences
 

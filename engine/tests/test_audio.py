@@ -156,6 +156,19 @@ def test_metadata_escaping(tmp_path):
     assert r"title=A\=B\; C\#1\\" in text and r"title=One\; \=two" in text
 
 
+def test_aac_encoder_is_probed_not_just_listed(monkeypatch):
+    """ffmpeg lists `aac_at` on every Mac, but a VM or a headless session can fail to open it. Pick the native
+    `aac` encoder then, instead of discovering it when a six-hour book is ready to encode."""
+    listed = " A....D aac_at              Apple AudioToolbox AAC\n A....D aac                 AAC (Advanced Audio Coding)"
+    assert m4b._aac_encoder(" A....D aac                 AAC") == "aac"   # not listed: no probe needed
+
+    def cannot_open(*args, **kwargs):
+        return subprocess.CompletedProcess(args[0], 1, stdout="", stderr="Error while opening encoder")
+
+    monkeypatch.setattr(m4b.subprocess, "run", cannot_open)
+    assert m4b._aac_encoder(listed) == "aac"
+
+
 def test_build_m4b_with_chapters_and_cover(tmp_path):
     files, marks, pos = [], [], 0.0
     for n, secs in enumerate([2.0, 3.5, 1.5]):

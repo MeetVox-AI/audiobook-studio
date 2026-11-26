@@ -220,6 +220,38 @@ def test_qwen3_unknown_preset_is_not_synthesised_without_a_speaker():
     assert model.calls[0]["voices"] == ["ryan", "ryan"]
 
 
+def test_synthesis_does_not_import_mlx_until_it_needs_to(monkeypatch):
+    """mlx.core has no usable GPU on a virtual machine, a CI runner or a headless Mac and aborts the whole
+    process instead of raising. Validating the voice and synthesising with a fake model must not import it:
+    the only use in synthesis is seeding the RNG, so it belongs after the checks and inside `seed`."""
+    real_import = builtins.__import__
+
+    def no_metal(name, *args, **kwargs):
+        if name == "mlx" or name.startswith("mlx."):
+            raise ImportError("No Metal device available")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_metal)
+
+    qwen = get_engine("qwen3")
+    qwen.models[qwen3_mod.CUSTOM] = FakeQwen3Model()
+    with pytest.raises(EngineError, match="Unknown voice 'george'"):
+        qwen.synthesize(["Hello."], VoiceChoice("george"), "en")
+    assert [a.size for a in qwen.synthesize(["Hi.", "Again."], VoiceChoice("ryan"), "en")] == [100, 100]
+
+    voxtral = get_engine("voxtral")
+    voxtral.model = FakeVoxtralModel()
+    assert [a.size for a in voxtral.synthesize(["Bonjour."], VoiceChoice("fr_female"), "fr")] == [2400]
+
+    fish = get_engine("fish")
+    fish.model = types.SimpleNamespace()
+    with pytest.raises(EngineError, match="reference clip"):
+        fish.synthesize(["Hello."], VoiceChoice("anything"), "en")
+
+    with pytest.raises(ImportError, match="No Metal"):
+        qwen.synthesize(["Hi."], VoiceChoice("ryan"), "en", seed=1)   # a seed really does need mlx
+
+
 def test_qwen3_preset_missing_from_checkpoint_is_an_error():
     engine = get_engine("qwen3")
     model = engine.models[qwen3_mod.CUSTOM] = FakeQwen3Model(speakers=["serena", "vivian"])

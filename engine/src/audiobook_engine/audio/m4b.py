@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -41,6 +42,30 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
     return proc
 
 
+def _aac_encoder(encoders: str) -> str:
+    """The best AAC encoder ffmpeg really has.
+
+    `ffmpeg -encoders` lists Apple's AudioToolbox encoder (`aac_at`) on every Mac, but a virtual machine, a CI
+    runner or a headless session can list it and still fail to *open* it ("Error while opening encoder").
+    Probe a 0.1 s encode so a long narration does not discover that at the very end; the native `aac` encoder
+    always works and produces the same kind of AAC-LC track.
+    """
+    if not re.search(r"\baac_at\b", encoders):
+        return "aac"
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "probe.m4a"
+        try:
+            proc = subprocess.run(
+                [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+                 "-i", "anullsrc=r=44100:cl=mono", "-t", "0.1", "-c:a", "aac_at", "-b:a", "64k",
+                 "-ac", "1", "-ar", "44100", str(probe)],
+                capture_output=True, text=True, timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return "aac"
+        return "aac_at" if proc.returncode == 0 and probe.exists() and probe.stat().st_size > 0 else "aac"
+
+
 def check_tools() -> dict:
     """Fail fast (before any narration) when ffmpeg/ffprobe are unusable."""
     out = {}
@@ -49,7 +74,7 @@ def check_tools() -> dict:
     if not out["ffmpeg"] or not out["ffprobe"]:
         raise FFmpegError(MISSING_MESSAGE)
     enc = _run([FFMPEG, "-hide_banner", "-encoders"]).stdout
-    out["aac_encoder"] = "aac_at" if re.search(r"\baac_at\b", enc) else "aac"
+    out["aac_encoder"] = _aac_encoder(enc)
     return out
 
 

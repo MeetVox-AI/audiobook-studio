@@ -1,0 +1,55 @@
+name: Bug report
+description: Something went wrong while converting or using the app.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not attach copyrighted books or audiobooks; a short, freely
+        distributable sample or a page range is enough to reproduce most problems.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Steps, or the exact command(s) you ran.
+      placeholder: |
+        1. Open a book...
+        2. Choose a voice...
+        3. Press Convert...
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message or engine output
+      description: The error shown in the app, or the last JSON line from the engine.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Audiobook Studio version
+      description: Shown in Settings - About, or the release you downloaded.
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac and macOS version
+      placeholder: MacBook Pro M4 Pro, macOS 26.1
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Narration engine
+      options:
+        - Qwen3-TTS (default)
+        - Kokoro
+        - Voxtral
+        - Fish S2 Pro
+        - Not engine-specific
