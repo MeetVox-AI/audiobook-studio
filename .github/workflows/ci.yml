@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  engine:
+    name: Engine · lint and tests
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      # The audio tests build real M4B files with ffmpeg. GitHub images usually ship it; install it if not.
+      - name: ffmpeg
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
+      - name: Install the engine
+        working-directory: engine
+        run: uv sync --frozen
+      - name: Lint (undefined names, unused imports)
+        working-directory: engine
+        run: uv run --frozen ruff check --select F src tests
+      - name: Tests
+        working-directory: engine
+        run: uv run --frozen pytest -q
+
+  app:
+    name: App · build and tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: swift --version
+      - name: Build
+        working-directory: app
+        run: swift build --build-tests
+      - name: Tests
+        working-directory: app
+        run: swift test

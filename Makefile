@@ -1,6 +1,6 @@
 # Audiobook Studio — local EPUB/PDF to M4B audiobooks on Apple Silicon.
-#   make setup    install engine + default models (Kokoro, Qwen3-TTS, Whisper) + default voices
-#   make models-all   also install the optional non-commercial engines (Voxtral, Fish S2 Pro)
+#   make setup    install engine + default models (ZONOS3-Mini, Kokoro, Whisper, Qwen3-ASR) + default voices
+#   make models-all   also install the optional engines (Qwen3-TTS, Voxtral, Fish S2 Pro, VoxCPM2)
 #   make test     engine tests + lint + app tests
 #   make app      build app/build/AudiobookStudio.app
 #   make bench    measure engines on this Mac (results feed every time estimate)
@@ -8,7 +8,7 @@
 
 ENGINE      := engine
 CLI         := $(ENGINE)/.venv/bin/audiobook-engine
-MIN_FREE_GB := 12
+MIN_FREE_GB := 8
 
 .PHONY: setup engine models models-all voices test test-engine test-app app app-check bench check-disk clean-cache
 
@@ -27,13 +27,16 @@ engine:
 	cd $(ENGINE) && uv sync
 
 models: engine
+	$(CLI) models download zonos3
 	$(CLI) models download kokoro
-	$(CLI) models download qwen3
 	$(CLI) models download whisper
+	$(CLI) models download qwen3-asr
 
 models-all: models
+	$(CLI) models download qwen3
 	$(CLI) models download voxtral
 	$(CLI) models download fish
+	$(CLI) models download voxcpm2
 
 voices: engine
 	$(CLI) voices download fr_siwis_female_book

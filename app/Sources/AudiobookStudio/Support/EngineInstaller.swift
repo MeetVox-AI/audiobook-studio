@@ -34,8 +34,17 @@ enum SystemCommands {
         return CommandResult(status: proc.terminationStatus, output: String(decoding: data, as: UTF8.self))
     }
 
-    static let isUnderTest = NSClassFromString("XCTestCase") != nil
-        || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    /// Set by the test suite so the shared runner can never execute real commands.
+    /// Detection of the runner environment on its own is not portable: XCTest may not be loaded and the
+    /// SwiftPM testing helper's bundle path differs between Xcode releases.
+    nonisolated(unsafe) static var forcedInertForTesting = false
+
+    static var isUnderTest: Bool {
+        forcedInertForTesting
+            || NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || Bundle.main.bundlePath.hasSuffix(".xctest")
+    }
 }
 
 /// Apple's developer tools (git comes from them): installed, and their licence accepted.

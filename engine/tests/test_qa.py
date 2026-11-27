@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import types
+
 import numpy as np
 
+from audiobook_engine.qa import verify
 from audiobook_engine.qa.verify import align, fold, fold_words, score, score_packed, to_16k
 
 
@@ -39,6 +42,50 @@ def test_dropped_phrase_is_bad():
     exp = "The old man walked to the window and looked at the sea which was grey and calm today."
     s = score(exp, "The old man walked to the window today.", "en")
     assert s.max_deletion_run >= 4 and s.bad
+
+
+# --- which recogniser checks a language -------------------------------------------------------------------------
+
+def test_the_speech_check_uses_qwen3_for_multilingual_and_whisper_for_english(monkeypatch):
+    """Whisper keeps en/fr (the only calibrated languages); Qwen3-ASR takes the other eleven."""
+    monkeypatch.delenv("AUDIOBOOK_ASR", raising=False)
+    monkeypatch.setattr(verify, "_model_installed", lambda repo: repo == verify.QWEN3_ASR)
+    assert verify.Verifier("en").backend == "whisper"
+    assert verify.Verifier("fr").backend == "whisper"
+    for lang in ("de", "es", "it", "pt", "ru", "zh", "ja", "ko", "hi", "ar", "nl"):
+        assert verify.Verifier(lang).backend == "qwen3", lang
+
+
+def test_a_missing_qwen3_model_falls_back_to_whisper(monkeypatch):
+    monkeypatch.delenv("AUDIOBOOK_ASR", raising=False)
+    monkeypatch.setattr(verify, "_model_installed", lambda repo: False)
+    assert verify.Verifier("de").backend == "whisper"
+
+
+def test_the_asr_backend_can_be_forced_for_ab(monkeypatch):
+    monkeypatch.setenv("AUDIOBOOK_ASR", "qwen3")
+    assert verify.Verifier("en").backend == "qwen3"
+    monkeypatch.setenv("AUDIOBOOK_ASR", "whisper")
+    assert verify.Verifier("de").backend == "whisper"
+
+
+def test_qwen3_transcribes_the_non_empty_chunks_in_one_call(monkeypatch):
+    calls = []
+
+    class FakeASR:
+        def generate(self, audio, language=None):
+            calls.append({"clips": len(audio) if isinstance(audio, list) else 1, "lang": language})
+            if isinstance(audio, list):
+                return [types.SimpleNamespace(text=f"heard {i}") for i in range(len(audio))]
+            return types.SimpleNamespace(text="heard")
+
+    verifier = verify.Verifier("de", backend="qwen3")
+    verifier.model = FakeASR()
+    sr = 24000
+    audios = [np.ones(sr // 2, np.float32), np.zeros(0, np.float32), np.ones(sr // 3, np.float32)]
+    out = verifier.check_many(["eins zwei", "leer", "drei vier"], audios, sr)
+    assert calls == [{"clips": 2, "lang": "de"}]
+    assert len(out) == 3
 
 
 def test_hallucinated_tail_is_bad():

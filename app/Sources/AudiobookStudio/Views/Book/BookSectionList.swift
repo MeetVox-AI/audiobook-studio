@@ -97,7 +97,12 @@ struct BookSectionRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Space.m) {
-            Toggle("Include", isOn: Binding(get: { isIncluded }, set: onToggle))
+            // Call through a MainActor closure instead of passing `onToggle` straight into
+            // Binding: Swift 6.3 IRGen crashes (SmallVector overflow) when reabstracting the
+            // @isolated(any) closure, so erase the isolation with assumeIsolated here.
+            Toggle("Include", isOn: Binding(get: { isIncluded }, set: { value in
+                MainActor.assumeIsolated { onToggle(value) }
+            }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
                 .accessibilityLabel("Include \(section.sectionKind.title.lowercased()) “\(section.title)”")
@@ -144,7 +149,9 @@ struct BookSectionRow: View {
         .hoverHighlight()
         .contextMenu {
             Button(isIncluded ? "Leave Out This Section" : "Include This Section") { onToggle(!isIncluded) }
-            Button("Make a 2-Minute Sample from This Section", action: onSample)
+            Button("Make a 2-Minute Sample from This Section") {
+                MainActor.assumeIsolated { onSample() }
+            }
         }
     }
 

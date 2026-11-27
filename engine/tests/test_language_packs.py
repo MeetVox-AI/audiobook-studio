@@ -39,8 +39,8 @@ def test_info_reports_engines_and_readiness():
     es = language_packs.info("es")
     assert es["ready"] and es["recommended"] == "qwen3" and not es["enabled"]
     assert {e["id"] for e in es["engines"]} >= {"qwen3", "voxtral", "kokoro"}
-    hi = language_packs.info("hi")          # only Voxtral and Kokoro speak Hindi; neither is installed here
-    assert not hi["ready"] and hi["recommended"] == "kokoro"
+    hi = language_packs.info("hi")          # nothing is installed here: the default narrator leads
+    assert not hi["ready"] and hi["recommended"] == "zonos3"
     assert language_packs.info("zh")["engines"][0]["native_presets"]
 
 
@@ -63,7 +63,7 @@ def test_add_reports_the_engine_needed_and_never_downloads_a_model(monkeypatch, 
     monkeypatch.setattr(voices, "library", lambda: [])
     fake_installed(tmp_path, [], monkeypatch)
     res = language_packs.add("hi")
-    assert res["enabled"] and not res["ready"] and res["needs"] == "kokoro"
+    assert res["enabled"] and not res["ready"] and res["needs"] == "zonos3"
 
 
 def test_voice_download_failure_is_reported_but_language_is_on(monkeypatch, tmp_path):

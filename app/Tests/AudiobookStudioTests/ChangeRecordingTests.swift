@@ -181,10 +181,10 @@ private func makeModel(enginePath: String, extraModels: [ModelStatus] = []) thro
     let g = OpsModelInfo.groups(all, engineIds: engines)
     #expect(g.narration.map(\.engine) == engines)
     #expect(g.cleanup.map(\.engine) == ["voice-isolation", "voice-enhancer"])   // isolation first
-    #expect(g.other.map(\.engine) == ["whisper"])
+    #expect(g.other.map(\.engine) == ["whisper", "qwen3-asr"])
     let early = OpsModelInfo.groups(all, engineIds: [])                          // engine list not loaded yet
     #expect(!early.narration.contains { $0.engine.hasPrefix("voice-") || $0.engine == "whisper" })
-    #expect(early.cleanup.count == 2 && early.other.map(\.engine) == ["whisper"])
+    #expect(early.cleanup.count == 2 && early.other.map(\.engine) == ["whisper", "qwen3-asr"])
 }
 
 // MARK: - The Change Recording form

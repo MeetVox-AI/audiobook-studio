@@ -1,4 +1,4 @@
-"""Qwen3-TTS 1.7B (Apache-2.0) via mlx-audio: default quality engine and cloning.
+"""Qwen3-TTS 1.7B (Apache-2.0) via mlx-audio: high-quality narration and cloning.
 
 Verified against mlx-audio 0.5.8 source:
 - presets need the CustomVoice checkpoint; cloning needs the Base checkpoint;
@@ -60,7 +60,7 @@ SPEC = EngineSpec(
         Voice("sohee", "Sohee", "ko", "female", "Korean-native", "Native Korean; others with an accent",
               also=("en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja")),
     ],
-    notes="Default engine, ten languages. Preset voices are native in English, Chinese, Japanese and Korean; for "
+    notes="Ten languages. Preset voices are native in English, Chinese, Japanese and Korean; for "
           "French, Spanish, German, Italian, Portuguese and Russian clone a reference clip in that language.",
     # The CustomVoice config.json (spk_id, revision 41d3337) also has these Chinese-native speakers
     # (eric: Sichuan dialect, dylan: Beijing dialect; the dialect only applies to Chinese text).
@@ -163,8 +163,6 @@ class Qwen3Engine:
 
     def synthesize(self, texts: list[str], voice: VoiceChoice, lang: str, speed: float = 1.0,
                    seed: int | None = None) -> list[np.ndarray]:
-        import mlx.core as mx
-
         if lang not in LANG:
             raise EngineError(f"Qwen3-TTS: unsupported language '{lang}'")
         self._check_voice(voice)
@@ -174,6 +172,8 @@ class Qwen3Engine:
         if not voice.ref_audio:
             self._check_speaker(model, voice.preset)
         if seed is not None:
+            import mlx.core as mx
+
             mx.random.seed(seed)
         longest = max(len(t) for t in texts)
         from ..audio.validate import seconds_per_char

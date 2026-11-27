@@ -76,10 +76,11 @@ extension AppModel {
     /// The engine's model is installed; nil when `models list` has no entry for it (not loaded yet).
     func opsModelInstalled(_ engineId: String) -> Bool? { models.first { $0.engine == engineId }?.installed }
 
-    /// A queued or running job uses this model: the speech-check model ("whisper") counts as used by every job.
+    /// A queued or running job uses this model: a speech-check model counts as used by every job.
     func opsModelInUse(_ engineId: String) -> Bool {
         jobs.contains { job in
-            liveState(of: job).isActive && (job.engine == engineId || engineId == OpsModelInfo.speechCheckModel)
+            liveState(of: job).isActive
+                && (job.engine == engineId || OpsModelInfo.speechCheckModels.contains(engineId))
         }
     }
 
@@ -477,7 +478,8 @@ enum JobResultSummary {
 /// Display text for one row of the Models screen.
 struct OpsModelInfo: Hashable, Sendable {
     /// The speech-check model (not a narration engine).
-    static let speechCheckModel = "whisper"
+    /// Whisper checks English and French; Qwen3-ASR checks every other language.
+    static let speechCheckModels: Set<String> = ["whisper", "qwen3-asr"]
     /// Clean-up models for "Add My Voice" (DeepFilterNet3, MossFormer2-SE).
     static let voiceIsolationModel = "voice-isolation"
     static let voiceEnhancerModel = "voice-enhancer"
@@ -491,7 +493,8 @@ struct OpsModelInfo: Hashable, Sendable {
         let cleanup = cleanupModels.compactMap { id in models.first { $0.engine == id } }
         let rest = models.filter { !cleanupModels.contains($0.engine) }
         guard !engineIds.isEmpty else {
-            return (rest.filter { $0.engine != speechCheckModel }, cleanup, rest.filter { $0.engine == speechCheckModel })
+            return (rest.filter { !speechCheckModels.contains($0.engine) }, cleanup,
+                    rest.filter { speechCheckModels.contains($0.engine) })
         }
         let narration = rest.filter { engineIds.contains($0.engine) }
             .sorted { (engineIds.firstIndex(of: $0.engine) ?? 0) < (engineIds.firstIndex(of: $1.engine) ?? 0) }

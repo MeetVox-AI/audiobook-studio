@@ -90,13 +90,17 @@ import Testing
     let voices = try Fixtures.decode("voices_list.json", as: VoiceList.self).voices
     let models = try Fixtures.decode("models_list.json", as: ModelList.self).models
     let en = VoiceSelection.suggested(for: "en", engines: engines, voices: voices, models: models)
-    #expect(en?.engineId == "qwen3" && en?.presetId == "ryan")
-    // Qwen3 has no French preset: it clones the first installed French voice.
+    #expect(en?.engineId == "zonos3" && en?.presetId == "thaddeus")
+    // ZONOS3-Mini now has a French preset, so French uses it instead of cloning.
     let fr = VoiceSelection.suggested(for: "fr", engines: engines, voices: voices, models: models)
-    #expect(fr?.engineId == "qwen3" && fr?.refVoiceId == "fr_siwis_female_book")
+    #expect(fr?.engineId == "zonos3" && fr?.presetId == "gaspard")
     #expect(fr?.fits(language: "fr", engines: engines, voices: voices) == true)
     #expect(en?.fits(language: "fr", engines: engines, voices: voices) == false)
-    #expect(fr?.displayName(engines: engines, voices: voices) == "SIWIS — studio narrator (F) · Qwen3-TTS 1.7B (cloned)")
+    #expect(fr?.displayName(engines: engines, voices: voices) == "Gaspard · ZONOS3-Mini")
+    // Installed engines win: with only Kokoro installed, English stays on Kokoro instead of downloading ZONOS3.
+    let kokoroOnly = models.map { m -> ModelStatus in var copy = m; copy.installed = copy.engine == "kokoro"; return copy }
+    let enKokoro = VoiceSelection.suggested(for: "en", engines: engines, voices: voices, models: kokoroOnly)
+    #expect(enKokoro?.engineId == "kokoro")
 }
 
 // MARK: - Settings and model
@@ -158,9 +162,9 @@ import Testing
     model.voiceSelection?.choosePreset("am_adam")
     #expect(model.estimate?.exactVoice == false && model.estimate?.charsPerSecond == 188.33)
 
-    // Changing the language switches to a French voice (no voices loaded: Kokoro's French preset).
+    // Changing the language switches to a French voice (no voices loaded: ZONOS3-Mini's French preset).
     model.setLanguage("fr")
-    #expect(model.draft?.language == "fr" && model.voiceSelection?.engineId == "kokoro" && model.voiceSelection?.presetId == "ff_siwis")
+    #expect(model.draft?.language == "fr" && model.voiceSelection?.engineId == "zonos3" && model.voiceSelection?.presetId == "gaspard")
 }
 
 @MainActor

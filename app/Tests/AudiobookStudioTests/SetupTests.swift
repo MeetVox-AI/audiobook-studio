@@ -77,17 +77,17 @@ private let licenseText = "You have not agreed to the Xcode license. Please reso
     #expect(SetupCatalog.uncovered(["en", "fr"], engines: ["kokoro"]).isEmpty)
     #expect(SetupCatalog.uncovered(["ru", "ar", "en"], engines: ["kokoro"]) == ["ru", "ar"])
     #expect(SetupCatalog.uncovered(["ru"], engines: []) == ["ru"])
-    // Suggestions: the cheapest set that speaks everything missing.
-    #expect(SetupCatalog.suggestion(for: ["ru"]) == ["qwen3"])
-    #expect(SetupCatalog.suggestion(for: ["ar"]) == ["voxtral"])
-    #expect(SetupCatalog.suggestion(for: ["nl"]) == ["voxtral"])
-    #expect(Set(SetupCatalog.suggestion(for: ["ru", "ar"])) == ["qwen3", "voxtral"])
-    #expect(SetupCatalog.suggestion(for: ["de"]) == ["voxtral"])        // smaller than qwen3
+    // Suggestions: the cheapest set that speaks everything missing. ZONOS3-Mini covers all thirteen.
+    #expect(SetupCatalog.suggestion(for: ["ru"]) == ["zonos3"])
+    #expect(SetupCatalog.suggestion(for: ["ar"]) == ["zonos3"])
+    #expect(SetupCatalog.suggestion(for: ["nl"]) == ["zonos3"])
+    #expect(Set(SetupCatalog.suggestion(for: ["ru", "ar"])) == ["zonos3"])
+    #expect(SetupCatalog.suggestion(for: ["de"]) == ["zonos3"])        // smaller than qwen3 and voxtral
     #expect(SetupCatalog.suggestion(for: []).isEmpty)
-    #expect(SetupCatalog.coverageMessage(uncovered: ["ru"], suggestion: ["qwen3"])
-            == "Russian needs High quality (Qwen3-TTS 1.7B); add it here or later in Models.")
-    #expect(SetupCatalog.coverageMessage(uncovered: ["ru", "ar", "ja"], suggestion: ["qwen3", "voxtral"])
-            == "Russian, Japanese and Arabic need High quality (Qwen3-TTS 1.7B) and Voxtral 4B; add it here or later in Models.")
+    #expect(SetupCatalog.coverageMessage(uncovered: ["ru"], suggestion: ["zonos3"])
+            == "Russian needs Narrator (ZONOS3-Mini); add it here or later in Models.")
+    #expect(SetupCatalog.coverageMessage(uncovered: ["ru", "ar", "ja"], suggestion: ["zonos3"])
+            == "Russian, Japanese and Arabic need Narrator (ZONOS3-Mini); add it here or later in Models.")
     #expect(SetupCatalog.coverageMessage(uncovered: [], suggestion: []) == nil)
 }
 
@@ -97,9 +97,9 @@ private let licenseText = "You have not agreed to the Xcode license. Please reso
     let flow = makeModel().setup
     flow.languages = ["en", "ru"]
     flow.chosen = ["kokoro"]
-    #expect(flow.autoEngines == ["qwen3"] && flow.chosen == ["kokoro", "qwen3"] && flow.userChosen == ["kokoro"])
+    #expect(flow.autoEngines == ["zonos3"] && flow.chosen == ["kokoro", "zonos3"] && flow.userChosen == ["kokoro"])
     #expect(flow.uncoveredLanguages.isEmpty && flow.coverageNote == nil)
-    #expect(flow.coverage(of: "kokoro")?.missing == ["ru"] && flow.coverage(of: "qwen3")?.missing == [])
+    #expect(flow.coverage(of: "kokoro")?.missing == ["ru"] && flow.coverage(of: "zonos3")?.missing == [])
 }
 
 @MainActor
@@ -313,22 +313,26 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
 
 // MARK: - Tiers, sizes and licences
 
-@Test func theThreeTiersAreNamedSizedAndLicensed() {
+@Test func theTiersAreNamedSizedAndLicensed() {
     let tiers = SetupCatalog.tiers
-    #expect(tiers.map(\.title) == ["Quick", "High quality", "Very high quality"])
-    #expect(tiers.map(\.id) == ["kokoro", "qwen3", "fish"])
-    #expect(tiers.map(\.modelName) == ["Kokoro 82M", "Qwen3-TTS 1.7B", "Fish Audio S2 Pro"])
-    #expect(tiers.map(\.gb) == [0.35, 6.2, 6.7])
-    #expect(tiers.map(\.licenseName) == ["Apache-2.0", "Apache-2.0", "Fish Audio Research Licence"])
-    #expect(tiers.map(\.noncommercial) == [false, false, true])
-    #expect(tiers.map(\.licenseSummary) == ["Free for any use", "Free for any use", "Personal use only"])
+    #expect(tiers.map(\.title) == ["Narrator", "Quick", "High quality", "Very high quality"])
+    #expect(tiers.map(\.id) == ["zonos3", "kokoro", "qwen3", "fish"])
+    #expect(tiers.map(\.modelName) == ["ZONOS3-Mini", "Kokoro 82M", "Qwen3-TTS 1.7B", "Fish Audio S2 Pro"])
+    #expect(tiers.map(\.gb) == [1.4, 0.35, 6.2, 6.7])
+    #expect(tiers.map(\.licenseName) == ["Apache-2.0", "Apache-2.0", "Apache-2.0", "Fish Audio Research Licence"])
+    #expect(tiers.map(\.noncommercial) == [false, false, false, true])
+    #expect(tiers.map(\.licenseSummary) == ["Free for any use", "Free for any use", "Free for any use", "Personal use only"])
     // Other options and the quality check.
     let voxtral = SetupCatalog.other.first
-    #expect(SetupCatalog.other.count == 1 && voxtral?.id == "voxtral" && voxtral?.gb == 2.5)
+    let voxcpm = SetupCatalog.other.last
+    #expect(SetupCatalog.other.count == 2 && voxtral?.id == "voxtral" && voxtral?.gb == 2.5)
     #expect(voxtral?.noncommercial == true && voxtral?.licenseName == "CC BY-NC 4.0")
+    #expect(voxcpm?.id == "voxcpm2" && voxcpm?.gb == 2.3 && voxcpm?.noncommercial == false)
     #expect(SetupCatalog.quality.id == "whisper" && SetupCatalog.quality.gb == 1.6 && SetupCatalog.quality.licenseName == "MIT")
+    #expect(SetupCatalog.multilingualCheck.id == "qwen3-asr" && SetupCatalog.multilingualCheck.gb == 1.0)
+    #expect(SetupCatalog.multilingualCheck.licenseName == "Apache-2.0")
     #expect(SetupCatalog.quality.noncommercial == false && SetupCatalog.engineGB == 1.5)
-    #expect(SetupCatalog.all.map(\.id) == ["kokoro", "qwen3", "fish", "whisper", "voxtral"])
+    #expect(SetupCatalog.all.map(\.id) == ["zonos3", "kokoro", "qwen3", "fish", "whisper", "qwen3-asr", "voxtral", "voxcpm2"])
     // The wording of the old setup is gone.
     let text = SetupCatalog.all.flatMap { [$0.title, $0.detail, $0.listTitle ?? ""] } + Array(SetupCatalog.engineNames.values)
     #expect(!text.contains { $0.contains("Fast") || $0.contains("Best quality") || $0.contains("More voices") })
@@ -339,11 +343,13 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
 
 @Test func timeEstimatesAreStatedForEachTier() {
     let t = SetupCatalog.tiers
-    #expect(t[0].speed == "About 14-18x faster than listening" && t[0].bookTime == "A 10-hour book takes about 40 minutes.")
-    #expect(t[1].speed?.contains("3-5x") == true && t[1].speed?.contains("2.4x when cloning") == true)
-    #expect(t[1].bookTime == "A 10-hour book takes about 2-4 hours.")
-    #expect(t[2].speed == "Slower than listening (about 0.56x)" && t[2].bookTime == "A 10-hour book takes about 18 hours.")
+    #expect(t[0].speed?.contains("Real time on an M3") == true && t[0].bookTime == "A 10-hour book takes a few hours.")
+    #expect(t[1].speed == "About 14-18x faster than listening" && t[1].bookTime == "A 10-hour book takes about 40 minutes.")
+    #expect(t[2].speed?.contains("3-5x") == true && t[2].speed?.contains("2.4x when cloning") == true)
+    #expect(t[2].bookTime == "A 10-hour book takes about 2-4 hours.")
+    #expect(t[3].speed == "Slower than listening (about 0.56x)" && t[3].bookTime == "A 10-hour book takes about 18 hours.")
     #expect(SetupCatalog.other[0].speed?.contains("1.7-1.9x") == true)
+    #expect(SetupCatalog.other[1].speed?.contains("Slower than real time") == true)
     #expect(SetupCatalog.benchmarkNote.contains("M4 Pro") && SetupCatalog.benchmarkNote.contains("10-hour"))
 }
 
@@ -381,8 +387,8 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     #expect(abs(flow.neededGB - (6.2 + 1.6 + 1.5 + 0.006)) < 1e-9)
     #expect(abs(flow.modelsGB - 6.2) < 1e-9)
     flow.chosen = []
-    // English and French need some voice: High quality is added as the default (6.2 GB).
-    #expect(flow.chosen == ["qwen3"] && abs(flow.neededGB - (6.2 + 1.5 + 0.006)) < 1e-9)
+    // English and French need some voice: the default narrator is added (1.4 GB).
+    #expect(flow.chosen == ["zonos3"] && abs(flow.neededGB - (1.4 + 1.5 + 0.006)) < 1e-9)
 }
 
 @Test func freeSpaceWarningWhenItWillNotFit() {
@@ -464,25 +470,27 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
 
 @Test func singleCoverLanguagesForceTheirEngine() {
     func need(_ langs: Set<String>, have: Set<String> = []) -> Set<String> { Set(SetupCatalog.required(languages: langs, have: have)) }
-    #expect(need(["nl"]) == ["voxtral"] && need(["ar"]) == ["voxtral"])
-    for code in ["ru", "zh", "ja", "ko"] { #expect(need([code]) == ["qwen3"], "\(code)") }
-    #expect(need(["nl", "ru"]) == ["voxtral", "qwen3"])
-    #expect(need(["en", "ar", "ja", "nl"]) == ["voxtral", "qwen3"])
-    // Voxtral forced for Dutch also speaks Hindi: Quick is not added for it.
-    #expect(need(["nl", "hi"]) == ["voxtral"])
-    #expect(need(["en"]) == ["qwen3"] && need(["en", "fr"]) == ["qwen3"])
+    // ZONOS3-Mini speaks every language (by cloning where it has no preset voice), so one engine covers all.
+    #expect(need(["nl"]) == ["zonos3"] && need(["ar"]) == ["zonos3"])
+    for code in ["ru", "zh", "ja", "ko"] { #expect(need([code]) == ["zonos3"], "\(code)") }
+    #expect(need(["nl", "ru"]) == ["zonos3"])
+    #expect(need(["en", "ar", "ja", "nl"]) == ["zonos3"])
+    #expect(need(["nl", "hi"]) == ["zonos3"])
+    #expect(need(["en"]) == ["zonos3"] && need(["en", "fr"]) == ["zonos3"])
 }
 
 @Test func severalCandidatesFollowThePreferenceOrder() {
     func need(_ langs: Set<String>, have: Set<String> = []) -> [String] { SetupCatalog.required(languages: langs, have: have) }
-    #expect(SetupCatalog.candidates(for: "de") == ["qwen3", "voxtral"] && need(["de"]) == ["qwen3"])
-    #expect(SetupCatalog.candidates(for: "hi") == ["kokoro", "voxtral"] && need(["hi"]) == ["kokoro"])
-    for code in ["es", "it", "pt"] { #expect(SetupCatalog.candidates(for: code) == ["qwen3", "kokoro", "voxtral"] && need([code]) == ["qwen3"]) }
-    #expect(SetupCatalog.candidates(for: "fr") == ["qwen3", "kokoro", "voxtral", "fish"])
+    #expect(SetupCatalog.candidates(for: "de") == ["zonos3", "qwen3", "voxtral", "voxcpm2"] && need(["de"]) == ["zonos3"])
+    #expect(SetupCatalog.candidates(for: "hi") == ["zonos3", "kokoro", "voxtral", "voxcpm2"] && need(["hi"]) == ["zonos3"])
+    for code in ["es", "it", "pt"] {
+        #expect(SetupCatalog.candidates(for: code) == ["zonos3", "kokoro", "qwen3", "voxtral", "voxcpm2"] && need([code]) == ["zonos3"])
+    }
+    #expect(SetupCatalog.candidates(for: "fr") == ["zonos3", "kokoro", "qwen3", "voxtral", "fish", "voxcpm2"])
     // A narrator that is already there covers it: nothing is added.
     #expect(need(["de"], have: ["voxtral"]).isEmpty && need(["hi"], have: ["voxtral"]).isEmpty)
-    // Russian forces Qwen3-TTS, which also covers German: no second engine.
-    #expect(need(["ru", "de"]) == ["qwen3"])
+    // ZONOS3 covers Russian and German by itself, and it is the preferred default.
+    #expect(need(["ru", "de"]) == ["zonos3"])
 }
 
 @MainActor
@@ -490,22 +498,22 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let flow = makeModel().setup
     flow.userChosen = ["kokoro"]
     flow.languages = ["en", "nl", "ar"]
-    #expect(flow.chosen == ["kokoro", "voxtral"] && flow.autoEngines == ["voxtral"])
-    #expect(flow.lockLabel("voxtral") == "Required for Arabic and Dutch")
+    #expect(flow.chosen == ["kokoro", "zonos3"] && flow.autoEngines == ["zonos3"])
+    #expect(flow.lockLabel("zonos3") == "Needed for Arabic and Dutch")
     // Unticking is refused, with the reason (also kept for VoiceOver).
-    let why = flow.toggleModel("voxtral")
-    #expect(why?.contains("Arabic and Dutch can only be narrated by Voxtral 4B") == true && flow.notice == why)
-    #expect(flow.chosen.contains("voxtral"))
+    let why = flow.toggleModel("zonos3")
+    #expect(why?.contains("Arabic and Dutch would have no voice without Narrator (ZONOS3-Mini)") == true && flow.notice == why)
+    #expect(flow.chosen.contains("zonos3"))
     // Even when the person ticked it themselves.
-    flow.userChosen.insert("voxtral")
-    #expect(flow.toggleModel("voxtral") != nil && flow.chosen.contains("voxtral"))
+    flow.userChosen.insert("zonos3")
+    #expect(flow.toggleModel("zonos3") != nil && flow.chosen.contains("zonos3"))
     // Other cards can still be toggled; a successful change clears the message.
     #expect(flow.toggleModel("kokoro") == nil && flow.notice == nil && !flow.chosen.contains("kokoro"))
     // Dropping the languages unlocks it, unless it is then the only voice for English: tick another first.
     flow.toggleLanguage("nl"); flow.toggleLanguage("ar")
-    #expect(flow.lockLabel("voxtral") == "Needed for English")
+    #expect(flow.lockLabel("zonos3") == "Needed for English")
     flow.toggleModel("kokoro")
-    #expect(flow.lockLabel("voxtral") == nil && flow.toggleModel("voxtral") == nil && !flow.chosen.contains("voxtral"))
+    #expect(flow.lockLabel("zonos3") == nil && flow.toggleModel("zonos3") == nil && !flow.chosen.contains("zonos3"))
 }
 
 @MainActor
@@ -513,8 +521,8 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let flow = makeModel().setup
     flow.userChosen = []
     flow.languages = ["de"]
-    #expect(flow.chosen == ["qwen3"] && flow.lockLabel("qwen3") == "Needed for German")
-    #expect(flow.toggleModel("qwen3")?.contains("German would have no voice without High quality") == true)
+    #expect(flow.chosen == ["zonos3"] && flow.lockLabel("zonos3") == "Needed for German")
+    #expect(flow.toggleModel("zonos3")?.contains("German would have no voice without Narrator") == true)
     // Select another engine that speaks German first: the automatic one is released, and can then be unticked.
     #expect(flow.toggleModel("voxtral") == nil)
     #expect(flow.chosen == ["voxtral"] && flow.autoEngines.isEmpty)
@@ -526,11 +534,11 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let flow = makeModel().setup
     flow.userChosen = ["kokoro"]
     flow.languages = ["en", "ru", "ar"]
-    #expect(flow.chosen == ["kokoro", "qwen3", "voxtral"])
+    #expect(flow.chosen == ["kokoro", "zonos3"])
     flow.toggleLanguage("ar")
-    #expect(flow.chosen == ["kokoro", "qwen3"])                    // Voxtral released
+    #expect(flow.chosen == ["kokoro", "zonos3"])                   // Russian still needs a narrator
     flow.toggleLanguage("ru")
-    #expect(flow.chosen == ["kokoro"] && flow.userChosen == ["kokoro"])   // Qwen3-TTS released; Quick was ticked and stays
+    #expect(flow.chosen == ["kokoro"] && flow.userChosen == ["kokoro"])   // ZONOS3 released; Quick was ticked and stays
     // A ticked engine is never removed by a language change, even when no language needs it.
     flow.toggleModel("fish")
     flow.languages = ["en", "nl"]
@@ -546,15 +554,15 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     flow.userChosen = []
     flow.languages = ["nl", "ru", "ar"]
     #expect(flow.autoEngines.isEmpty && flow.chosen.isEmpty && flow.lockedLanguages("voxtral").isEmpty)
-    // Uninstalled Voxtral: Dutch and Arabic need it again, Russian is still covered by the installed Qwen3-TTS.
+    // Uninstalled ZONOS3 and Voxtral: Dutch and Arabic need a narrator again, Russian is covered by Qwen3-TTS.
     var models = try Fixtures.decode("models_list.json", as: ModelList.self).models
-    for i in models.indices where models[i].engine == "voxtral" { models[i].installed = false }
+    for i in models.indices where ["zonos3", "voxtral", "voxcpm2"].contains(models[i].engine) { models[i].installed = false }
     model.preload(models: models)
-    #expect(flow.autoEngines == ["voxtral"])
+    #expect(flow.autoEngines == ["zonos3"])
 }
 
 @MainActor
-@Test func anAutoAddedVoxtralNeedsTheLicenceAcknowledgementAndTotalsFollow() {
+@Test func aNonCommercialChoiceNeedsTheLicenceAcknowledgementAndTotalsFollow() {
     let model = makeModel()
     model.settings.enginePathOverride = "/nonexistent/audiobook-engine"
     let flow = model.setup
@@ -563,33 +571,37 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let before = flow.neededGB
     #expect(flow.modelsNeedingAcknowledgement.isEmpty && !flow.acknowledgementPending)
     flow.toggleLanguage("nl")
-    #expect(flow.chosen == ["qwen3", "voxtral"])
+    // Dutch is covered by the default narrator, so nothing is forced and no licence box appears.
+    #expect(flow.chosen == ["qwen3", "zonos3"])
+    #expect(flow.modelsNeedingAcknowledgement.isEmpty && flow.canInstall)
+    let withDutch = flow.neededGB
+    // Ticking the non-commercial engine asks for the acknowledgement and adds its size.
+    flow.userChosen.insert("voxtral")
+    #expect(flow.chosen == ["qwen3", "voxtral"])      // Voxtral replaces the automatic ZONOS3-Mini
     #expect(flow.modelsNeedingAcknowledgement.map(\.id) == ["voxtral"] && flow.acknowledgementPending && !flow.canInstall)
-    // 2.5 GB for Voxtral plus 3 MB of Dutch voices.
-    #expect(abs(flow.neededGB - (before + 2.5 + 0.003)) < 1e-9)
-    #expect(flow.lockedLanguages("voxtral") == ["nl"])
+    #expect(abs(flow.neededGB - (withDutch + 2.5 - 1.4)) < 1e-9)   // +2.5 GB Voxtral, -1.4 GB ZONOS3
     flow.setLicenseAcknowledged(true)
     #expect(!flow.acknowledgementPending)
-    // Removing Dutch releases Voxtral: the requirement and the size go away at once.
-    flow.toggleLanguage("nl")
+    flow.userChosen.remove("voxtral")
     #expect(flow.modelsNeedingAcknowledgement.isEmpty && !flow.acknowledgementPending)
-    #expect(abs(flow.neededGB - before) < 1e-9)
+    #expect(flow.chosen == ["qwen3", "zonos3"])       // ZONOS3-Mini comes back automatically
+    #expect(abs(flow.neededGB - withDutch) < 1e-9)
 }
 
 @MainActor
-@Test func quickForANonEnglishLanguageIsMarkedDraftQuality() {
+@Test func aNonEnglishLanguageGetsTheDefaultNarratorUnlessQuickIsTicked() {
     let flow = makeModel().setup
     flow.userChosen = []
     flow.languages = ["hi"]
-    #expect(flow.chosen == ["kokoro"] && flow.lockLabel("kokoro") == "Needed for Hindi")
-    #expect(flow.quickDraftNote == "Draft quality for Hindi. Voxtral 4B (under Other options) gives better voices.")
+    #expect(flow.chosen == ["zonos3"] && flow.lockLabel("zonos3") == "Needed for Hindi")
+    #expect(flow.quickDraftNote == nil)
     flow.languages = ["es"]
-    #expect(flow.chosen == ["qwen3"] && flow.quickDraftNote == nil)
+    #expect(flow.chosen == ["zonos3"] && flow.quickDraftNote == nil)
     flow.userChosen = ["kokoro"]
-    #expect(flow.chosen == ["kokoro"])      // Qwen3-TTS is not added: Quick covers Spanish
-    #expect(flow.quickDraftNote == "Draft quality for Spanish. High quality or Voxtral 4B (under Other options) gives better voices.")
+    #expect(flow.chosen == ["kokoro"])      // ZONOS3-Mini is not added: Quick covers Spanish
+    #expect(flow.quickDraftNote == "Draft quality for Spanish. Narrator gives better voices.")
     flow.languages = ["fr"]
-    #expect(flow.quickDraftNote == "Draft quality for French. High quality or Voxtral 4B (under Other options) gives better voices.")
+    #expect(flow.quickDraftNote == "Draft quality for French. Narrator gives better voices.")
 }
 
 @Test func theLanguagesStepSummarisesWhatTheSelectionNeeds() {
@@ -597,9 +609,9 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     #expect(text(["en"]) == "Any voice quality works for English.")
     #expect(text(["en", "fr"]) == "Any voice quality works for English and French.")
     #expect(text(["en", "ru", "ja", "nl"])
-            == "Your languages need: Qwen3-TTS 1.7B (6.2 GB) for Russian and Japanese; Voxtral 4B (2.5 GB, personal use only) for Dutch. You can review this before anything downloads.")
-    #expect(text(["nl", "ar"]) == "Your languages need: Voxtral 4B (2.5 GB, personal use only) for Arabic and Dutch. You can review this before anything downloads.")
-    #expect(text(["hi"]) == "Your languages need: Kokoro 82M (0.35 GB, draft quality) for Hindi. You can review this before anything downloads.")
+            == "Your languages need: ZONOS3-Mini (1.4 GB) for Russian, Japanese and Dutch. You can review this before anything downloads.")
+    #expect(text(["nl", "ar"]) == "Your languages need: ZONOS3-Mini (1.4 GB) for Arabic and Dutch. You can review this before anything downloads.")
+    #expect(text(["hi"]) == "Your languages need: ZONOS3-Mini (1.4 GB) for Hindi. You can review this before anything downloads.")
     #expect(text(["ru"], installed: ["qwen3"]) == "Voices already on this Mac cover Russian. You can review this before anything downloads.")
 }
 
@@ -608,7 +620,7 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
     let flow = makeModel().setup
     #expect(flow.languageNeedsSummary == "Any voice quality works for English.")
     flow.toggleLanguage("ar")
-    #expect(flow.languageNeedsSummary.contains("Voxtral 4B (2.5 GB, personal use only) for Arabic") && !flow.languageNeedsSummary.contains("English"))
+    #expect(flow.languageNeedsSummary.contains("ZONOS3-Mini (1.4 GB) for Arabic") && !flow.languageNeedsSummary.contains("English"))
 }
 
 @MainActor
@@ -736,5 +748,9 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
 }
 
 @Test func theSystemRunnerIsInertInsideTests() {
+    SystemCommands.forcedInertForTesting = true
+    defer { SystemCommands.forcedInertForTesting = false }
     #expect(SystemCommands.isUnderTest)
+    // A live runner would execute /usr/bin/false and report status 1; the inert one reports 0 without running it.
+    #expect(SystemCommands.run("/usr/bin/false", [], 1).status == 0)
 }

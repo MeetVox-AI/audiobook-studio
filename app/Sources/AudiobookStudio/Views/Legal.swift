@@ -20,11 +20,14 @@ enum LegalText {
     /// Licence of each component, shown under Settings > About (from the project README).
     static let licences: [(name: String, licence: String)] = [
         ("Audiobook Studio", "MIT"),
+        ("ZONOS3-Mini (voice model)", "Apache-2.0"),
         ("Kokoro 82M (voice model)", "Apache-2.0"),
         ("Qwen3-TTS 1.7B (voice model)", "Apache-2.0"),
+        ("VoxCPM2 (voice model)", "Apache-2.0"),
         ("Voxtral 4B (voice model)", "CC BY-NC 4.0, non-commercial"),
         ("Fish Audio S2 Pro (voice model)", "Fish Audio Research Licence, non-commercial"),
         ("Whisper large-v3-turbo (speech check)", "MIT"),
+        ("Qwen3-ASR (speech check)", "Apache-2.0"),
         ("mlx-audio (inference library)", "MIT"),
         ("PyMuPDF (PDF reading)", "AGPL-3.0"),
         ("Reference voices", "CC BY 4.0, CC0 or public domain; credits are shown in Voices"),

@@ -255,9 +255,9 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
 @Test func engineCheckAndCacheTexts() throws {
     let list = try Fixtures.decode("engines.json", as: EngineList.self)
     #expect(OpsEngineCheck.summary(list)
-            == "The engine works: 4 voice engines (Qwen3-TTS 1.7B, Voxtral TTS 4B, Fish Audio S2 Pro, Kokoro 82M (fast draft)).")
+            == "The engine works: 6 voice engines (ZONOS3-Mini, Kokoro 82M (fast draft), Qwen3-TTS 1.7B, Voxtral TTS 4B, Fish Audio S2 Pro, VoxCPM2 4-bit (studio)).")
     var one = list
-    one.engines = [list.engines[3]]
+    one.engines = [try #require(list.engine("kokoro"))]
     #expect(OpsEngineCheck.summary(one) == "The engine works: 1 voice engine (Kokoro 82M (fast draft)).")
     one.engines = []
     #expect(OpsEngineCheck.summary(one) == "The engine answered, but it lists no voice engines.")
@@ -314,7 +314,7 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
     #expect(voxtralFr.map(\.id) == ["voxtral|preset:fr_female", "voxtral|preset:fr_male"])
     #expect(voxtralFr[0].pickerTitle == "French female · Voxtral TTS 4B — personal use only")
     #expect(model.opsNarratorChoices(engine: kokoro, language: "de").isEmpty)
-    #expect(model.opsNarratorChoices(language: "fr").count == 5 + 2 + 5 + 1)
+    #expect(model.opsNarratorChoices(language: "fr").count == 1 + 5 + 5 + 2 + 5 + 1 + 5)
 
     // Keys ignore speed and speech check.
     #expect(OpsNarratorChoice.key(VoiceSelection(engineId: "qwen3", presetId: "ryan", speed: 1.3, verify: false)) == "qwen3|preset:ryan")
@@ -345,9 +345,9 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
 @Test func benchmarkFormSelection() throws {
     let (model, defaults, suite) = try fixtureModel()
     defer { defaults.removePersistentDomain(forName: suite) }
-    // Defaults follow the current narrator (Qwen3 · Ryan for English).
+    // Defaults follow the current narrator (ZONOS3-Mini · Thaddeus for English).
     let initial = try #require(model.opsBenchmarkSelection(engineId: nil, language: nil, choiceId: nil))
-    #expect(initial.engine.id == "qwen3" && initial.language == "en" && initial.choice?.id == "qwen3|preset:ryan")
+    #expect(initial.engine.id == "zonos3" && initial.language == "en" && initial.choice?.id == "zonos3|preset:thaddeus")
 
     // Switching to Fish keeps the language and picks its first cloned voice.
     let fish = try #require(model.opsBenchmarkSelection(engineId: "fish", language: "en", choiceId: nil))
@@ -369,11 +369,11 @@ private func fixtureMonitor(until stop: ((EngineEvent) -> Bool)? = nil) throws -
 @Test func modelsInUseByRunningJobs() throws {
     let (model, defaults, suite) = try fixtureModel()
     defer { defaults.removePersistentDomain(forName: suite) }
-    #expect(!model.opsModelInUse("kokoro") && !model.opsModelInUse(OpsModelInfo.speechCheckModel))
+    #expect(!model.opsModelInUse("kokoro") && !OpsModelInfo.speechCheckModels.contains(where: model.opsModelInUse))
     var jobs = model.jobs
     jobs[1].state = "running"   // the Kokoro job
     model.preload(jobs: jobs)
     #expect(model.jobsInProgress.map(\.jobId) == ["033885dc2758"] && model.jobsFinished.count == 2)
-    #expect(model.opsModelInUse("kokoro") && model.opsModelInUse(OpsModelInfo.speechCheckModel))
+    #expect(model.opsModelInUse("kokoro") && OpsModelInfo.speechCheckModels.allSatisfy(model.opsModelInUse))
     #expect(!model.opsModelInUse("qwen3"))
 }
