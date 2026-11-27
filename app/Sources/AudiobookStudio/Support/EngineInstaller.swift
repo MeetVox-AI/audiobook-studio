@@ -34,8 +34,11 @@ enum SystemCommands {
         return CommandResult(status: proc.terminationStatus, output: String(decoding: data, as: UTF8.self))
     }
 
+    // Two kinds of test runner host this: xcodebuild/xctest (env var, or XCTest linked) and SwiftPM's
+    // swift-testing runner, where the main bundle is the .xctest bundle itself.
     static let isUnderTest = NSClassFromString("XCTestCase") != nil
         || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        || Bundle.main.bundlePath.hasSuffix(".xctest")
 }
 
 /// Apple's developer tools (git comes from them): installed, and their licence accepted.
