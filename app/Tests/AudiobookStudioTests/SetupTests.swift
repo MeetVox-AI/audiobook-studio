@@ -748,5 +748,9 @@ private func flowWithStub(_ stub: String, list: String, selected: Set<String>) t
 }
 
 @Test func theSystemRunnerIsInertInsideTests() {
+    SystemCommands.forcedInertForTesting = true
+    defer { SystemCommands.forcedInertForTesting = false }
     #expect(SystemCommands.isUnderTest)
+    // A live runner would execute /usr/bin/false and report status 1; the inert one reports 0 without running it.
+    #expect(SystemCommands.run("/usr/bin/false", [], 1).status == 0)
 }
