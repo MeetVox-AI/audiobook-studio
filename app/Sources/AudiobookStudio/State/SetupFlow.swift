@@ -44,7 +44,7 @@ enum SetupCatalog {
                          speed: "About 14-18x faster than listening", bookTime: "A 10-hour book takes about 40 minutes.",
                          listTitle: "Quick (Kokoro 82M)"),
         SetupModelChoice(id: "qwen3", title: "High quality", modelName: "Qwen3-TTS 1.7B", maker: "Qwen (Alibaba)",
-                         detail: "Expressive narration in ten languages, and the default for Russian and Japanese. It can clone a voice from a short clip.",
+                         detail: "Expressive narration in ten languages, with native voices in English, Chinese, Japanese and Korean. It can clone a voice from a short clip.",
                          gb: 6.2, licenseName: "Apache-2.0",
                          speed: "About 3-5x faster than listening with its preset voices, about 2.4x when cloning a voice",
                          bookTime: "A 10-hour book takes about 2-4 hours.",
@@ -148,8 +148,9 @@ enum SetupCatalog {
     static func isOpen(_ code: String) -> Bool { candidates(for: code).count == preference.count }
 
     /// The engines to add to `have` so that every language in `languages` has a narrator. A language only one
-    /// engine speaks forces that engine (Dutch, Arabic: Voxtral; Russian, Chinese, Japanese, Korean: Qwen3-TTS);
-    /// any other gets its first candidate in `preference` order, unless an engine already added or in `have` speaks it.
+    /// engine speaks would force that engine (no language is in that position today: ZONOS3-Mini and VoxCPM2
+    /// speak all thirteen); any other gets its first candidate in `preference` order, unless an engine already
+    /// added or in `have` speaks it.
     static func required(languages: Set<String>, have: Set<String>) -> [String] {
         var engines = have
         var added: [String] = []
@@ -379,12 +380,12 @@ final class SetupFlow {
         }
     }
 
-    /// The locked languages no other engine in the catalogue speaks at all ("Required for Dutch, Arabic").
+    /// The locked languages no other engine in the catalogue speaks at all ("Required for <languages>").
     func requiredLanguages(_ engine: String) -> [String] {
         lockedLanguages(engine).filter { SetupCatalog.candidates(for: $0) == [engine] }
     }
 
-    /// "Required for Dutch and Arabic" or "Needed for German"; nil when the engine is not holding a language up.
+    /// "Required for <languages>" or "Needed for <languages>"; nil when the engine is not holding a language up.
     func lockLabel(_ engine: String) -> String? {
         let required = requiredLanguages(engine)
         if !required.isEmpty { return "Required for \(SetupCatalog.languageList(required))" }

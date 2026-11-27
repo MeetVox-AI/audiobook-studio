@@ -196,7 +196,7 @@ private struct ModelCard: View {
     var tag: String?
     let installed: Bool
     var coverage: String?
-    /// "Required for Dutch, Arabic": the card cannot be unticked while those languages are on.
+    /// "Required for <languages>": the card cannot be unticked while those languages are on.
     var lock: String?
     let isOn: Bool
     let action: () -> Void

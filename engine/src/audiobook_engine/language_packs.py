@@ -105,8 +105,9 @@ def info(code: str) -> dict:
     engines = _engine_rows(lang.code)
     ready = any(e["installed"] for e in engines)
     installed = [e for e in engines if e["installed"]]
-    # A built-in voice for this language beats a clone-only engine (ZONOS3 has no Russian, Japanese, Arabic or
-    # Dutch preset, so those recommend Qwen3-TTS or Voxtral when installed).
+    # A built-in voice for this language beats cloning. ZONOS3 covers nine languages (en, fr, de, es, it, pt,
+    # zh, ko, hi), Qwen3-TTS adds Japanese, Voxtral adds Dutch and Arabic; Russian has no built-in preset in
+    # any engine, so it keeps the first installed engine in preference order (the default narrator) and clones.
     recommended = next((e["id"] for e in installed if e["native_presets"]), None)
     if recommended is None:
         recommended = installed[0]["id"] if installed else (engines[0]["id"] if engines else None)

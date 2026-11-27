@@ -24,7 +24,7 @@
 | 🎧 **A real audiobook, not a long MP3** | One `.m4b` with chapter markers, cover art, title and author, normalised loudness and the audiobook tag, checked with ffprobe after every conversion, so audiobook players can show chapters and your cover. |
 | 🗣️ **Voices you can actually pick** | Six engines, **13 languages**, plus **voice cloning** from a 10-second clip of a voice you have the right to use. Preview any voice on *your own book*, or compare two side by side. |
 | ⏱️ **Honest time estimates** | Make a 2-minute sample first. The app measures how fast *your* Mac narrates, then tells you how long the whole book will take, and keeps a live, range-based estimate while it works. |
-| ✅ **Checks its own work** | Every sentence is transcribed back with Whisper and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
+| ✅ **Checks its own work** | Every sentence is transcribed back with Whisper or Qwen3-ASR and compared with the text. Dropped or invented words are regenerated, and anything still wrong is listed for you. |
 | 🔄 **Keeps itself up to date** | The app checks for new versions daily and installs them in the background (signed updates only). You can turn it off in Settings. |
 | 🌙 **A proper Mac app** | Native SwiftUI, Liquid Glass design, light and dark mode. Conversions run in the background: close the window, quit the app, come back later. |
 
@@ -51,7 +51,7 @@ English is on by default. **Add French and the other languages in Settings → L
 | | Languages |
 |---|---|
 | ZONOS3-Mini (default engine) | All thirteen: English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean, Hindi, Arabic, Dutch |
-| Qwen3-TTS | English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean (the default for Russian and Japanese) |
+| Qwen3-TTS | English, French, Spanish, German, Italian, Portuguese, Russian, Chinese, Japanese, Korean |
 | Voxtral | the above Latin-script ones plus Dutch, Hindi and Arabic |
 | Kokoro (fast drafts) | English, French, Spanish, Italian, Portuguese, Hindi |
 | VoxCPM2 (studio) | any of the thirteen, by cloning a reference voice |
@@ -69,7 +69,7 @@ Measured on an Apple M4 Pro (48 GB), not quoted from a vendor. "×" means times 
 |---|---|---|---|
 | **ZONOS3-Mini** *(default)* | Everyday narration in any of the thirteen languages, 44.1 kHz, built-in voices or cloning | ≈ 5–6× with preset voices, ≈ 2× when cloning | Apache-2.0 |
 | **Kokoro 82M** | Fast drafts: English, French, Spanish, Italian, Portuguese, Hindi | ≈ 14–18× — a 6½-hour French novel in 32 minutes | Apache-2.0 |
-| **Qwen3-TTS 1.7B** | Russian and Japanese presets, and a quality alternative in its ten languages | ≈ 3–5× with preset voices, ≈ 2.4× when cloning | Apache-2.0 |
+| **Qwen3-TTS 1.7B** | Native English, Chinese, Japanese and Korean presets, and a quality alternative in its ten languages | ≈ 3–5× with preset voices, ≈ 2.4× when cloning | Apache-2.0 |
 | **Voxtral 4B** | Native presets in nine languages, including Dutch, Hindi and Arabic | ≈ 1.7–1.9× | CC BY-NC 4.0 (personal use) |
 | **VoxCPM2 4-bit** | Studio-quality clones at 48 kHz | ≈ 0.6× — a 10-hour book takes about 17 hours | Apache-2.0 |
 | **Fish S2 Pro** | Highest-fidelity cloning | ≈ 0.56× — slower than real time | Non-commercial |
@@ -113,7 +113,7 @@ AudiobookStudio.app (SwiftUI)  ──runs──▶  audiobook-engine (Python CLI
                                           ├─ ingest: EPUB (TOC-anchored chapters) / PDF (outline, headings)
                                           ├─ text: en/fr normalisation (numbers, dates, currency, abbreviations)
                                           ├─ TTS: ZONOS3-Mini · Kokoro · Qwen3-TTS · Voxtral · VoxCPM2 · Fish S2 Pro (mlx-audio)
-                                          ├─ QA: Whisper speech check, regenerates mismatched sentences
+                                          ├─ QA: Whisper / Qwen3-ASR speech check, regenerates mismatched sentences
                                           └─ ffmpeg: loudness (−20 LUFS), AAC, chapters, cover → .m4b
 ```
 
@@ -164,7 +164,7 @@ demand with their attribution. You can also add your own clip; you must have the
 
 ## Quality safeguards
 
-- **Speech check**: every sentence produced by a sampling engine is transcribed with Whisper and compared with
+- **Speech check**: every sentence produced by a sampling engine is transcribed with Whisper or Qwen3-ASR and compared with
   the text; dropped or invented words trigger regeneration, and anything still wrong is listed in the report.
 - **Chunk checks**: silent, truncated or runaway audio is detected and redone.
 - **Structure**: front and back matter (copyright, table of contents, licences) are unticked automatically, with

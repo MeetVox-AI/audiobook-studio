@@ -1,4 +1,4 @@
-"""Qwen3-TTS 1.7B (Apache-2.0) via mlx-audio: default quality engine and cloning.
+"""Qwen3-TTS 1.7B (Apache-2.0) via mlx-audio: high-quality narration and cloning.
 
 Verified against mlx-audio 0.5.8 source:
 - presets need the CustomVoice checkpoint; cloning needs the Base checkpoint;
@@ -60,7 +60,7 @@ SPEC = EngineSpec(
         Voice("sohee", "Sohee", "ko", "female", "Korean-native", "Native Korean; others with an accent",
               also=("en", "fr", "es", "de", "it", "pt", "ru", "zh", "ja")),
     ],
-    notes="Default engine, ten languages. Preset voices are native in English, Chinese, Japanese and Korean; for "
+    notes="Ten languages. Preset voices are native in English, Chinese, Japanese and Korean; for "
           "French, Spanish, German, Italian, Portuguese and Russian clone a reference clip in that language.",
     # The CustomVoice config.json (spk_id, revision 41d3337) also has these Chinese-native speakers
     # (eric: Sichuan dialect, dylan: Beijing dialect; the dialect only applies to Chinese text).

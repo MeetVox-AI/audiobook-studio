@@ -1,7 +1,7 @@
 """VoxCPM2 4-bit (Apache-2.0) via mlx-audio: studio-quality narration from a cloned voice.
 
-2B parameters, 48 kHz output and the strongest speaker likeness of the engines here, at about real time on an
-Apple Silicon Mac (so the 4-bit checkpoint is the one that fits 16 GB beside the speech check).
+2B parameters, 48 kHz output and the strongest speaker likeness of the engines here. Slower than real time on an
+Apple Silicon Mac (about 1.7x; the 4-bit checkpoint is the one that fits 16 GB beside the speech check).
 
 Verified against mlx-audio 0.6.8 (models/voxcpm2):
 - generate(text, ref_audio=..., ref_text=..., inference_timesteps=..., cfg_value=...) is a generator;
@@ -38,8 +38,8 @@ SPEC = EngineSpec(
     deterministic=False,
     download_gb=2.3,
     voices=[],
-    notes="Studio quality: 48 kHz and the closest match to a reference voice, but about real time — a 6-hour "
-          "book takes about 6 hours. Needs a reference clip; no built-in voices.",
+    notes="Studio quality: 48 kHz and the closest match to a reference voice, but slower than real time — a 10-hour "
+          "book takes about 17 hours. Needs a reference clip; no built-in voices.",
 )
 
 
